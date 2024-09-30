@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Microphone Visualizer</title>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <canvas id="circleVisualizer" width="400" height="400"></canvas>
+    <canvas id="barVisualizer" width="200" height="100"></canvas>
+    <script>
+        // Get canvas elements and their contexts
+        const circleCanvas = document.getElementById('circleVisualizer');
+        const barCanvas = document.getElementById('barVisualizer');
+        const circleCtx = circleCanvas.getContext('2d');
+        const barCtx = barCanvas.getContext('2d');
+
+        // Audio context and analyzer variables
+        let audioContext, analyser, dataArray;
+
+        // Circle visualization parameters
+        let baseRadius = circleCanvas.width / 6;  // Base size of the circle
+        const maxRadius = baseRadius * 1.75;  // Maximum radius
+        const sensitivity = 3;  // Sensitivity factor for circle growth
+
+		// Bar visualization parameters
+		const numberOfBars = 5
+
+        // Setup audio context and analyzer
+        async function setupAudio() {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 2048; // Set FFT size for detailed audio analysis
+            try {
+                // Request microphone access and connect to analyzer
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioContext.createMediaStreamSource(stream);
+                source.connect(analyser);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+                requestAnimationFrame(draw);
+            } catch (err) {
+                console.error('Error accessing microphone:', err);
+            }
+        }
+
+        // Draw the circle visualization
+        function drawCircle(volumeData) {
+            circleCtx.clearRect(0, 0, circleCanvas.width, circleCanvas.height);
+
+            // Calculate circle radius based on volume data
+            const scaleFactor = Math.min(1, Math.pow(volumeData * sensitivity, 1.2));
+            const radius = baseRadius + (scaleFactor * (maxRadius - baseRadius));
+
+            // Draw the circle
+            circleCtx.beginPath();
+            circleCtx.arc(circleCanvas.width / 2, circleCanvas.height / 2, radius, 0, 2 * Math.PI);
+            circleCtx.fillStyle = 'rgb(0, 0, 0)';
+            circleCtx.fill();
+			circleCtx.closePath();
+        }
+
+        // Draw the bar visualizations, this is meant to be a simplified waveform
+        function drawBars() {
+            barCtx.clearRect(0, 0, barCanvas.width, barCanvas.height);
+
+            const barWidth = barCanvas.width / 8;
+            const barGap = barWidth / 2;
+
+            const midpointX = barCanvas.width / 2;
+            const totalWidth = (barWidth * numberOfBars) + (barGap * (numberOfBars - 1));
+            const startX =  midpointX - (totalWidth / 2 ) + (barWidth / 2);
+
+            const minBarHeight = 0;
+            const maxBarHeight = barCanvas.height - 20;
+
+            for (let i = 0; i < numberOfBars; i++) {
+                const startIndex = Math.floor(i * dataArray.length / numberOfBars);
+                const endIndex = Math.floor((i + 1) * dataArray.length / numberOfBars);
+                const sectionData = dataArray.slice(startIndex, endIndex);
+
+                // Calculate RMS (Root Mean Square) for a more accurate volume representation
+                const rms = Math.sqrt(sectionData.reduce((sum, value) => sum + Math.pow(value - 128, 2), 0) / sectionData.length);
+                const normalizedRMS = rms / 128;
+
+                const scaleFactor = 1; // Increased for more noticeable effect
+
+                // Calculate bar height, ensuring it's at least the minimum (circular) height
+                const barHeight = Math.max(minBarHeight, Math.min(normalizedRMS * scaleFactor * barCanvas.height, maxBarHeight));
+
+				// Define the x and y position
+                const x = startX + i * (barWidth + barGap);
+                const y = barCanvas.height / 2;
+
+                // Draw the pill shape
+                barCtx.beginPath();
+                barCtx.arc(x, y - barHeight / 2, barWidth / 2, 0, Math.PI, true);
+                barCtx.arc(x, y + barHeight / 2, barWidth / 2, Math.PI, 2 * Math.PI, true);
+                barCtx.closePath();
+
+                barCtx.fillStyle = 'rgb(0, 220, 0)';
+                barCtx.fill();
+            }
+        }
+
+        // Main draw function
+        function draw() {
+            requestAnimationFrame(draw);
+            analyser.getByteTimeDomainData(dataArray);
+
+			// Calcualte Volumens
+			// Overall Volumne
+            const average = dataArray.reduce((sum, value) => Math.abs(value - 128) + sum, 0) / dataArray.length;
+            const normalizedAverage = average / 128;
+
+
+
+            drawCircle(normalizedAverage);
+            drawBars();
+        }
+
+        // Start audio context on user interaction
+        document.addEventListener('click', () => {
+            if (!audioContext) setupAudio();
+        });
+    </script>
+</body>
+</html>
