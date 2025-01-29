@@ -1,0 +1,9 @@
+[package]
+name = "subspaced"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.22.1"
+image = "0.25.5"
+xcap = "0.2.2"
