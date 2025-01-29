@@ -1,11 +1,17 @@
 use axum::{
-    response::Json, routing::get, Router
+    http::StatusCode,
+    routing::{get, post}, Router, response::Json, extract
 };
-
+use rdev::{simulate, EventType, Button};
 use xcap::Monitor;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use image::ImageFormat;
 use serde_json::{json, Value}; 
+use serde::{Serialize, Deserialize};
+
+async fn root() -> &'static str {
+    "Subspace is running"
+}
 
 async fn screenshot() -> Json<Value> {
     let monitors = Monitor::all().unwrap();
@@ -29,8 +35,26 @@ async fn screenshot() -> Json<Value> {
     response_json
 }
 
-async fn root() -> &'static str {
-    "Subspace is running"
+// Request body structure
+#[derive(Debug, Serialize, Deserialize)]
+struct ClickRequest {
+    x: u32,
+    y: u32
+}
+
+async fn left_click(
+    extract::Json(click_request): extract::Json<ClickRequest>
+) -> Result<Json<Value>, (StatusCode, String)> {
+    simulate(&EventType::MouseMove { x: click_request.x as f64, y: click_request.y as f64 })
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    simulate(&EventType::ButtonPress(Button::Left))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    simulate(&EventType::ButtonRelease(Button::Left))
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    
+    Ok(Json(json!({
+        "status": "success"
+    })))
 }
 
 
@@ -38,8 +62,10 @@ async fn root() -> &'static str {
 async fn main() {
     let app = Router::new()
         // REST API
-        .route("/v1/screenshot", get(screenshot))
-        .route("/", get(root));
+        .route("/", get(root))
+        .route("/v1/actions/screenshot", get(screenshot))
+        .route("/v1/actions/left_click", post(left_click));
+        
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
