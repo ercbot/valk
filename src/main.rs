@@ -3,15 +3,27 @@ use axum::{
     routing::{get, post}, Router, extract,
     response::{Json, IntoResponse}
 };
-use rdev::{simulate, EventType, Button};
 use xcap::Monitor;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use image::ImageFormat;
 use serde_json::{json, Value}; 
 use serde::{Serialize, Deserialize};
 use tokio::time::{sleep, Duration};
+use enigo::{
+    Enigo,
+    Settings,
+    Mouse,
+    Button,
+    Direction::{Press, Release},
+    Coordinate::Abs
+};
 
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
+const ACTION_DELAY: Duration = Duration::from_millis(200);
+
+async fn action_delay() {
+    sleep(ACTION_DELAY).await;
+}
 
 async fn root() -> &'static str {
     "Subspace is running"
@@ -69,22 +81,25 @@ impl IntoResponse for ApiError {
     }
 }
 
-// Convert rdev::SimulateError into our ApiError
-impl From<rdev::SimulateError> for ApiError {
-    fn from(err: rdev::SimulateError) -> Self {
-        ApiError::ComputerInputError(err.to_string())
-    }
-}
-
 async fn left_click(
     extract::Json(click_request): extract::Json<ClickRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    simulate(&EventType::MouseMove { 
-        x: click_request.x as f64, 
-        y: click_request.y as f64 
-    })?;
-    simulate(&EventType::ButtonPress(Button::Left))?;
-    simulate(&EventType::ButtonRelease(Button::Left))?;
+    // Initialize Enigo
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    action_delay().await;
+
+    // Move the cursor to the specified position
+    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
+
+    action_delay().await;
+
+    // Perform a left click
+    enigo.button(Button::Left, Press).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Left, Release).unwrap();
 
     Ok(Json(json!({
         "status": "success"
@@ -94,13 +109,21 @@ async fn left_click(
 async fn right_click(
     extract::Json(click_request): extract::Json<ClickRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    simulate(&EventType::MouseMove { 
-        x: click_request.x as f64, 
-        y: click_request.y as f64 
-    })?;
-    simulate(&EventType::ButtonPress(Button::Right))?;
-    simulate(&EventType::ButtonRelease(Button::Right))?;
+    // Initialize Enigo
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
 
+    action_delay().await;
+
+    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Right, Press).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Right, Release).unwrap();
+    
     Ok(Json(json!({
         "status": "success"
     })))
@@ -109,12 +132,20 @@ async fn right_click(
 async fn middle_click(
     extract::Json(click_request): extract::Json<ClickRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    simulate(&EventType::MouseMove { 
-        x: click_request.x as f64, 
-        y: click_request.y as f64 
-    })?;
-    simulate(&EventType::ButtonPress(Button::Middle))?;
-    simulate(&EventType::ButtonRelease(Button::Middle))?;
+    // Initialize Enigo
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    action_delay().await;
+
+    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Middle, Press).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Middle, Release).unwrap();
 
     Ok(Json(json!({
         "status": "success"
@@ -124,17 +155,39 @@ async fn middle_click(
 async fn double_click(
     extract::Json(click_request): extract::Json<ClickRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    simulate(&EventType::MouseMove { x: click_request.x as f64, y: click_request.y as f64 })?;
-    simulate(&EventType::ButtonPress(Button::Left))?;
-    simulate(&EventType::ButtonRelease(Button::Left))?;
-    simulate(&EventType::ButtonPress(Button::Left))?;
-    simulate(&EventType::ButtonRelease(Button::Left))?;
+    // Initialize Enigo
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    // Move the cursor to the specified position
+    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
+
+    enigo.button(Button::Left, Press).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Left, Release).unwrap();
+
+    // Perform second left click
+    enigo.button(Button::Left, Press).unwrap();
+
+    action_delay().await;
+
+    enigo.button(Button::Left, Release).unwrap();
 
     Ok(Json(json!({
         "status": "success"
     })))
 }
 
+async fn cursor_position() -> Json<Value> {
+    let enigo = Enigo::new(&Settings::default()).unwrap();
+    let position = enigo.location().unwrap();
+    
+    Json(json!({
+        "x": position.0,
+        "y": position.1
+    }))
+}
 
 #[tokio::main]
 async fn main() {
@@ -145,7 +198,8 @@ async fn main() {
         .route("/v1/actions/left_click", post(left_click))
         .route("/v1/actions/right_click", post(right_click))
         .route("/v1/actions/middle_click", post(middle_click))
-        .route("/v1/actions/double_click", post(double_click));
+        .route("/v1/actions/double_click", post(double_click))
+        .route("/v1/actions/cursor_position", get(cursor_position));
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

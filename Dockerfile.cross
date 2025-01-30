@@ -11,4 +11,5 @@ RUN apt-get update && \
     libxi-dev \
     libxext-dev \
     libxtst-dev \
+    libxdo-dev \
     && rm -rf /var/lib/apt/lists/*
