@@ -81,24 +81,14 @@ impl IntoResponse for ApiError {
     }
 }
 
-async fn left_click(
-    extract::Json(click_request): extract::Json<ClickRequest>,
-) -> Result<Json<Value>, ApiError> {
+async fn left_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
 
-    action_delay().await;
-
-    // Move the cursor to the specified position
-    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
-
-    action_delay().await;
-
     // Perform a left click
-    enigo.button(Button::Left, Press).unwrap();
-
     action_delay().await;
-
+    enigo.button(Button::Left, Press).unwrap();
+    action_delay().await;
     enigo.button(Button::Left, Release).unwrap();
 
     Ok(Json(json!({
@@ -106,22 +96,14 @@ async fn left_click(
     })))
 }
 
-async fn right_click(
-    extract::Json(click_request): extract::Json<ClickRequest>,
-) -> Result<Json<Value>, ApiError> {
+async fn right_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
-
+    
+    // Perform right click
     action_delay().await;
-
-    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
-
-    action_delay().await;
-
     enigo.button(Button::Right, Press).unwrap();
-
     action_delay().await;
-
     enigo.button(Button::Right, Release).unwrap();
     
     Ok(Json(json!({
@@ -129,22 +111,14 @@ async fn right_click(
     })))
 }
 
-async fn middle_click(
-    extract::Json(click_request): extract::Json<ClickRequest>,
-) -> Result<Json<Value>, ApiError> {
+async fn middle_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
 
+    // Perform middle click
     action_delay().await;
-
-    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
-
-    action_delay().await;
-
     enigo.button(Button::Middle, Press).unwrap();
-
     action_delay().await;
-
     enigo.button(Button::Middle, Release).unwrap();
 
     Ok(Json(json!({
@@ -152,26 +126,21 @@ async fn middle_click(
     })))
 }
 
-async fn double_click(
-    extract::Json(click_request): extract::Json<ClickRequest>,
-) -> Result<Json<Value>, ApiError> {
+/// Double-click the left mouse button.
+async fn double_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
 
-    // Move the cursor to the specified position
-    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
-
-    enigo.button(Button::Left, Press).unwrap();
-
+    // Perform first left click
     action_delay().await;
-
+    enigo.button(Button::Left, Press).unwrap();
+    action_delay().await;
     enigo.button(Button::Left, Release).unwrap();
 
     // Perform second left click
-    enigo.button(Button::Left, Press).unwrap();
-
     action_delay().await;
-
+    enigo.button(Button::Left, Press).unwrap();
+    action_delay().await;
     enigo.button(Button::Left, Release).unwrap();
 
     Ok(Json(json!({
@@ -179,6 +148,7 @@ async fn double_click(
     })))
 }
 
+/// Get the current (x, y) pixel coordinate of the cursor on the screen.
 async fn cursor_position() -> Json<Value> {
     let enigo = Enigo::new(&Settings::default()).unwrap();
     let position = enigo.location().unwrap();
@@ -187,6 +157,44 @@ async fn cursor_position() -> Json<Value> {
         "x": position.0,
         "y": position.1
     }))
+}
+
+/// Move the cursor to a specified (x, y) pixel coordinate on the screen.
+async fn mouse_move(
+    extract::Json(click_request): extract::Json<ClickRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    action_delay().await;
+
+    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
+
+    Ok(Json(json!({
+        "status": "success"
+    })))
+}
+
+/// Click and drag the cursor to a specified (x, y) pixel coordinate on the screen.
+async fn left_click_drag(
+    extract::Json(click_request): extract::Json<ClickRequest>,
+) -> Result<Json<Value>, ApiError> {
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+
+    // Click and hold
+    action_delay().await;
+    enigo.button(Button::Left, Press).unwrap();
+
+    // Move the cursor to the specified position
+    action_delay().await;
+    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
+
+    // Release the mouse button
+    action_delay().await;
+    enigo.button(Button::Left, Release).unwrap();
+
+    Ok(Json(json!({
+        "status": "success"
+    })))
 }
 
 #[tokio::main]
@@ -199,7 +207,9 @@ async fn main() {
         .route("/v1/actions/right_click", post(right_click))
         .route("/v1/actions/middle_click", post(middle_click))
         .route("/v1/actions/double_click", post(double_click))
-        .route("/v1/actions/cursor_position", get(cursor_position));
+        .route("/v1/actions/cursor_position", get(cursor_position))
+        .route("/v1/actions/mouse_move", post(mouse_move))
+        .route("/v1/actions/left_click_drag", post(left_click_drag));
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
