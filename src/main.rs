@@ -202,15 +202,20 @@ async fn left_click_drag(
     })))
 }
 
+#[derive(Deserialize)]
+struct TextInput {
+    text: String
+}
+
 /// Type a string of text on the keyboard.
 async fn type_text(
-    extract::Json(text): extract::Json<String>,
+    extract::Json(input): extract::Json<TextInput>,
 ) -> Result<Json<Value>, ApiError> {
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
-    enigo.text(&text).unwrap();
+    enigo.text(&input.text).unwrap();
     Ok(Json(json!({
         "status": "success",
-        "text": text
+        "text": input.text
     })))
 }
 
@@ -218,11 +223,11 @@ async fn type_text(
 /// - This supports xdotool's `key` syntax.
 /// - Examples: "a", "Return", "alt+Tab", "ctrl+s", "Up", "KP_0" (for the numpad 0 key).
 async fn key(
-    extract::Json(text): extract::Json<String>,
+    extract::Json(input): extract::Json<TextInput>,
 ) -> Result<Json<Value>, ApiError> {
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
     
-    let key_press = KeyPress::from_str(&text)
+    let key_press = KeyPress::from_str(&input.text)
         .map_err(|e| ApiError::ComputerInputError(e))?;
     
     // Press modifiers
@@ -246,7 +251,7 @@ async fn key(
 
     Ok(Json(json!({
         "status": "success",
-        "key": text
+        "key": input.text
     })))
 }
 
