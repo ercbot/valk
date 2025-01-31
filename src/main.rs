@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use axum::{
     http::StatusCode,
     routing::{get, post}, Router, extract,
@@ -10,13 +12,12 @@ use serde_json::{json, Value};
 use serde::{Serialize, Deserialize};
 use tokio::time::{sleep, Duration};
 use enigo::{
-    Enigo,
-    Settings,
-    Mouse,
-    Button,
-    Direction::{Press, Release},
-    Coordinate::Abs
+    Button, Coordinate::Abs, Direction::{Press, Release}, Enigo, Keyboard, Mouse, Settings
 };
+
+mod key_press;
+
+use key_press::KeyPress;
 
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const ACTION_DELAY: Duration = Duration::from_millis(200);
@@ -29,6 +30,7 @@ async fn root() -> &'static str {
     "Subspace is running"
 }
 
+/// Take a screenshot of the screen.
 async fn screenshot() -> Json<Value> {
     // Delay to let things settle before taking a screenshot
     sleep(SCREENSHOT_DELAY).await;
@@ -81,6 +83,7 @@ impl IntoResponse for ApiError {
     }
 }
 
+/// Click the left mouse button.
 async fn left_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
@@ -96,6 +99,7 @@ async fn left_click() -> Result<Json<Value>, ApiError> {
     })))
 }
 
+/// Click the right mouse button.
 async fn right_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
@@ -111,6 +115,7 @@ async fn right_click() -> Result<Json<Value>, ApiError> {
     })))
 }
 
+/// Click the middle mouse button.
 async fn middle_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
     let mut enigo = Enigo::new(&Settings::default()).unwrap();
@@ -197,6 +202,54 @@ async fn left_click_drag(
     })))
 }
 
+/// Type a string of text on the keyboard.
+async fn type_text(
+    extract::Json(text): extract::Json<String>,
+) -> Result<Json<Value>, ApiError> {
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    enigo.text(&text).unwrap();
+    Ok(Json(json!({
+        "status": "success",
+        "text": text
+    })))
+}
+
+/// Press a key or key-combination on the keyboard.
+/// - This supports xdotool's `key` syntax.
+/// - Examples: "a", "Return", "alt+Tab", "ctrl+s", "Up", "KP_0" (for the numpad 0 key).
+async fn key(
+    extract::Json(text): extract::Json<String>,
+) -> Result<Json<Value>, ApiError> {
+    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    
+    let key_press = KeyPress::from_str(&text)
+        .map_err(|e| ApiError::ComputerInputError(e))?;
+    
+    // Press modifiers
+    for modifier in &key_press.modifiers {
+        enigo.key(*modifier, Press).unwrap();
+        action_delay().await;
+    }
+    
+    // Press the main key
+    enigo.key(key_press.key, Press).unwrap();
+    action_delay().await;
+
+    // Release the main key
+    enigo.key(key_press.key, Release).unwrap();
+    action_delay().await;
+    // Release modifiers in reverse order
+    for modifier in key_press.modifiers.iter().rev() {
+        enigo.key(*modifier, Release).unwrap();
+        action_delay().await;
+    }
+
+    Ok(Json(json!({
+        "status": "success",
+        "key": text
+    })))
+}
+
 #[tokio::main]
 async fn main() {
     let app = Router::new()
@@ -209,7 +262,9 @@ async fn main() {
         .route("/v1/actions/double_click", post(double_click))
         .route("/v1/actions/cursor_position", get(cursor_position))
         .route("/v1/actions/mouse_move", post(mouse_move))
-        .route("/v1/actions/left_click_drag", post(left_click_drag));
+        .route("/v1/actions/left_click_drag", post(left_click_drag))
+        .route("/v1/actions/type", post(type_text))
+        .route("/v1/actions/key", post(key));
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
