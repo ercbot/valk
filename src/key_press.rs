@@ -86,6 +86,157 @@ fn parse_single_key(key: &str) -> Result<Key, String> {
         "kp_9" => Ok(Key::Unicode('9')),
 
         // Default case for Unicode characters
-        _ => Ok(Key::Unicode(key.chars().next().ok_or("Invalid key {")?)),
+        _ => {
+            if key.len() == 1 {
+                Ok(Key::Unicode(key.chars().next().ok_or("Invalid key {")?))
+            } else {
+                Err("Invalid key".to_string())
+            }
+        } 
+    }
+}
+
+// Tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_single_key() {
+        let key = KeyPress::from_str("a").unwrap();
+        assert_eq!(key.modifiers.len(), 0);
+        assert!(matches!(key.key, Key::Unicode('a')));
+
+        let key = KeyPress::from_str("return").unwrap();
+        assert_eq!(key.modifiers.len(), 0);
+        assert!(matches!(key.key, Key::Return));
+    }
+
+    #[test]
+    fn test_with_single_modifier() {
+        let key = KeyPress::from_str("ctrl+a").unwrap();
+        assert_eq!(key.modifiers.len(), 1);
+        assert!(matches!(key.modifiers[0], Key::Control));
+        assert!(matches!(key.key, Key::Unicode('a')));
+
+        let key = KeyPress::from_str("shift+return").unwrap();
+        assert_eq!(key.modifiers.len(), 1);
+        assert!(matches!(key.modifiers[0], Key::Shift));
+        assert!(matches!(key.key, Key::Return));
+    }
+
+    #[test]
+    fn test_with_multiple_modifiers() {
+        let key = KeyPress::from_str("ctrl+alt+shift+a").unwrap();
+        assert_eq!(key.modifiers.len(), 3);
+        assert!(matches!(key.modifiers[0], Key::Control));
+        assert!(matches!(key.modifiers[1], Key::Alt));
+        assert!(matches!(key.modifiers[2], Key::Shift));
+        assert!(matches!(key.key, Key::Unicode('a')));
+    }
+
+    #[test]
+    fn test_function_keys() {
+        let key = KeyPress::from_str("f1").unwrap();
+        assert_eq!(key.modifiers.len(), 0);
+        assert!(matches!(key.key, Key::F1));
+
+        let key = KeyPress::from_str("ctrl+f12").unwrap();
+        assert_eq!(key.modifiers.len(), 1);
+        assert!(matches!(key.modifiers[0], Key::Control));
+        assert!(matches!(key.key, Key::F12));
+    }
+
+    #[test]
+    fn test_special_keys() {
+        let keys = vec![
+            ("tab", Key::Tab),
+            ("space", Key::Space),
+            ("backspace", Key::Backspace),
+            ("up", Key::UpArrow),
+            ("down", Key::DownArrow),
+            ("left", Key::LeftArrow),
+            ("right", Key::RightArrow),
+        ];
+
+        for (input, expected) in keys {
+            let key = KeyPress::from_str(input).unwrap();
+            assert_eq!(key.modifiers.len(), 0);
+            assert!(matches!(key.key, ref e if std::mem::discriminant(e) == std::mem::discriminant(&expected)));
+        }
+    }
+
+    #[test]
+    fn test_numpad_keys() {
+        for i in 0..10 {
+            let key = KeyPress::from_str(&format!("kp_{}", i)).unwrap();
+            assert_eq!(key.modifiers.len(), 0);
+            assert!(matches!(key.key, Key::Unicode(c) if c == char::from_digit(i, 10).unwrap()));
+        }
+    }
+
+    #[test]
+    fn test_case_insensitivity() {
+        let input = "CTRL+ALT+SHIFT+A";
+        let key = KeyPress::from_str(input).unwrap_or_else(|e| panic!("Failed to parse '{}': {}", input, e));
+        
+        assert_eq!(key.modifiers.len(), 3, 
+            "Expected 3 modifiers for '{}', got {}", input, key.modifiers.len());
+        
+        assert!(matches!(key.modifiers[0], Key::Control), 
+            "First modifier for '{}' should be Control, got {:?}", input, key.modifiers[0]);
+        assert!(matches!(key.modifiers[1], Key::Alt),
+            "Second modifier for '{}' should be Alt, got {:?}", input, key.modifiers[1]);
+        assert!(matches!(key.modifiers[2], Key::Shift),
+            "Third modifier for '{}' should be Shift, got {:?}", input, key.modifiers[2]);
+        
+        if let Key::Unicode(c) = key.key {
+            assert_eq!(c, 'A', "Key should be 'A', got '{}'", c);
+        } else {
+            panic!("Expected Unicode key 'A', got {:?}", key.key);
+        }
+    }
+
+    #[test]
+    fn test_alternative_modifier_names() {
+        let modifiers = vec![
+            ("control+a", Key::Control),
+            ("win+a", Key::Meta),
+            ("windows+a", Key::Meta),
+            ("command+a", Key::Meta),
+            ("super+a", Key::Meta),
+        ];
+
+        for (input, expected) in modifiers {
+            let key = KeyPress::from_str(input).unwrap();
+            assert_eq!(key.modifiers.len(), 1);
+            assert!(matches!(key.modifiers[0], ref e if std::mem::discriminant(e) == std::mem::discriminant(&expected)));
+            assert!(matches!(key.key, Key::Unicode('a')));
+        }
+    }
+
+    #[test]
+    fn test_invalid_inputs() {
+        let test_cases = vec![
+            ("", "empty string"),
+            ("+", "just a separator"),
+            ("ctrl+", "missing key"),
+            ("invalid+a", "invalid modifier"),
+            ("ctrl+invalid", "invalid key"),
+            ("ctrl++a", "double separator"),
+        ];
+
+        for (input, description) in test_cases {
+            match KeyPress::from_str(input) {
+                Ok(key) => panic!(
+                    "Expected error for {} ('{}'), but got successful parse: {:?}", 
+                    description, input, key
+                ),
+                Err(e) => println!(
+                    "Got expected error for {} ('{}'): {}", 
+                    description, input, e
+                ),
+            };
+        }
     }
 }
