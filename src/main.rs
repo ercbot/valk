@@ -13,7 +13,9 @@ use tracing::{info, Level, Span};
 
 mod key_press;
 mod action_queue;
+mod config;
 
+use config::Config;
 use action_queue::{ActionQueue, Action, ActionError, ActionResult};
 
 async fn create_action_queue() -> Arc<ActionQueue> {
@@ -132,6 +134,8 @@ async fn key(
 
 #[tokio::main]
 async fn main() {
+    let config = Config::new();
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_target(false)
@@ -169,6 +173,6 @@ async fn main() {
     );
 
     // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+    let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port)).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
