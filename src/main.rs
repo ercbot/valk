@@ -1,44 +1,31 @@
-use std::str::FromStr;
-use std::env;
+use std::{env, time::Duration};
 use axum::{
-    http::StatusCode,
     routing::{get, post}, Router, extract,
-    response::{Json, IntoResponse},
     response::Response,
     extract::Request
 };
-use xcap::Monitor;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use image::ImageFormat;
-use serde_json::{json, Value}; 
 use serde::{Serialize, Deserialize};
-use tokio::time::{sleep, Duration};
-use enigo::{
-    Button, Coordinate::Abs, Direction::{Press, Release}, Enigo, Keyboard, Mouse, Settings
-};
+use enigo::{Enigo, Settings};
+use std::sync::Arc;
 
 use tower_http::trace::{self, TraceLayer};
 use tracing::{info, Level, Span};
 
 mod key_press;
+mod action_queue;
 
-use key_press::KeyPress;
+use action_queue::{ActionQueue, Action, ActionError, ActionResult};
 
-const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
-const ACTION_DELAY: Duration = Duration::from_millis(500);
-
-async fn action_delay() {
-    sleep(ACTION_DELAY).await;
-}
-
-async fn create_enigo() -> Enigo {
+async fn create_action_queue() -> Arc<ActionQueue> {
     let settings = Settings {
         x11_display: Some(env::var("DISPLAY").unwrap()),
         ..Settings::default()
     };
     let enigo = Enigo::new(&settings).unwrap();
-
-    enigo
+    let queue = ActionQueue::new(enigo);
+    let queue = Arc::new(queue);
+    queue.start_processing().await;
+    queue
 }
 
 async fn root() -> &'static str {
@@ -46,29 +33,10 @@ async fn root() -> &'static str {
 }
 
 /// Take a screenshot of the screen.
-async fn screenshot() -> Json<Value> {
-    // Delay to let things settle before taking a screenshot
-    sleep(SCREENSHOT_DELAY).await;
-
-    let monitors = Monitor::all().unwrap();
-
-    // Only get the first monitor
-    let monitor = monitors.first().unwrap();
-
-    let image = monitor.capture_image().unwrap();
-        
-    // Convert image to base64
-    let mut cursor = std::io::Cursor::new(Vec::new());
-    image.write_to(&mut cursor, ImageFormat::Png).unwrap();
-    let bytes = cursor.into_inner();
-    let base64_image = BASE64.encode(bytes);
-
-    // Create JSON object with "image" field
-    let response_json = Json(json!({
-        "image": base64_image
-    }));
-    
-    response_json
+async fn screenshot(
+    extract::State(queue): extract::State<Arc<ActionQueue>>
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::Screenshot).await
 }
 
 // Request body structure
@@ -78,143 +46,61 @@ struct ClickRequest {
     y: u32
 }
 
-// Custom error type for our API
-#[derive(Debug)]
-pub enum ApiError {
-    ComputerInputError(String),
-}
-
-// Implement response conversion for our error type
-impl IntoResponse for ApiError {
-    fn into_response(self) -> axum::response::Response {
-        let (_status, message) = match self {
-            ApiError::ComputerInputError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
-
-        Json(json!({
-            "status": "error",
-            "message": message
-        })).into_response()
-    }
-}
-
 /// Click the left mouse button.
-async fn left_click() -> Result<Json<Value>, ApiError> {
-    // Initialize Enigo
-    let mut enigo = create_enigo().await;
-
-    // Perform a left click
-    action_delay().await;
-    enigo.button(Button::Left, Press).unwrap();
-    action_delay().await;
-    enigo.button(Button::Left, Release).unwrap();
-
-    Ok(Json(json!({
-        "status": "success"
-    })))
+async fn left_click(
+    extract::State(queue): extract::State<Arc<ActionQueue>>
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::LeftClick).await
 }
 
 /// Click the right mouse button.
-async fn right_click() -> Result<Json<Value>, ApiError> {
-    // Initialize Enigo
-    let mut enigo = create_enigo().await;
-    
-    // Perform right click
-    action_delay().await;
-    enigo.button(Button::Right, Press).unwrap();
-    action_delay().await;
-    enigo.button(Button::Right, Release).unwrap();
-    
-    Ok(Json(json!({
-        "status": "success"
-    })))
+async fn right_click(
+    extract::State(queue): extract::State<Arc<ActionQueue>>
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::RightClick).await
 }
 
 /// Click the middle mouse button.
-async fn middle_click() -> Result<Json<Value>, ApiError> {
-    // Initialize Enigo
-    let mut enigo = create_enigo().await;
-
-    // Perform middle click
-    action_delay().await;
-    enigo.button(Button::Middle, Press).unwrap();
-    action_delay().await;
-    enigo.button(Button::Middle, Release).unwrap();
-
-    Ok(Json(json!({
-        "status": "success"
-    })))
+async fn middle_click(
+    extract::State(queue): extract::State<Arc<ActionQueue>>
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::MiddleClick).await
 }
 
 /// Double-click the left mouse button.
-async fn double_click() -> Result<Json<Value>, ApiError> {
-    // Initialize Enigo
-    let mut enigo = create_enigo().await;
-
-    // Perform first left click
-    action_delay().await;
-    enigo.button(Button::Left, Press).unwrap();
-    action_delay().await;
-    enigo.button(Button::Left, Release).unwrap();
-
-    // Perform second left click
-    action_delay().await;
-    enigo.button(Button::Left, Press).unwrap();
-    action_delay().await;
-    enigo.button(Button::Left, Release).unwrap();
-
-    Ok(Json(json!({
-        "status": "success"
-    })))
+async fn double_click(
+    extract::State(queue): extract::State<Arc<ActionQueue>>
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::DoubleClick).await
 }
 
 /// Get the current (x, y) pixel coordinate of the cursor on the screen.
-async fn cursor_position() -> Json<Value> {
-    let enigo = create_enigo().await;
-    let position = enigo.location().unwrap();
-    
-    Json(json!({
-        "x": position.0,
-        "y": position.1
-    }))
+async fn cursor_position(
+    extract::State(queue): extract::State<Arc<ActionQueue>>
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::CursorPosition).await
 }
 
 /// Move the cursor to a specified (x, y) pixel coordinate on the screen.
 async fn mouse_move(
+    extract::State(queue): extract::State<Arc<ActionQueue>>,
     extract::Json(click_request): extract::Json<ClickRequest>,
-) -> Result<Json<Value>, ApiError> {
-    let mut enigo = create_enigo().await;
-
-    action_delay().await;
-
-    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
-
-    Ok(Json(json!({
-        "status": "success"
-    })))
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::MouseMove {
+        x: click_request.x,
+        y: click_request.y,
+    }).await
 }
 
 /// Click and drag the cursor to a specified (x, y) pixel coordinate on the screen.
 async fn left_click_drag(
+    extract::State(queue): extract::State<Arc<ActionQueue>>,
     extract::Json(click_request): extract::Json<ClickRequest>,
-) -> Result<Json<Value>, ApiError> {
-    let mut enigo = create_enigo().await;
-
-    // Click and hold
-    action_delay().await;
-    enigo.button(Button::Left, Press).unwrap();
-
-    // Move the cursor to the specified position
-    action_delay().await;
-    enigo.move_mouse(click_request.x as i32, click_request.y as i32, Abs).unwrap();
-
-    // Release the mouse button
-    action_delay().await;
-    enigo.button(Button::Left, Release).unwrap();
-
-    Ok(Json(json!({
-        "status": "success"
-    })))
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::LeftClickDrag {
+        x: click_request.x,
+        y: click_request.y,
+    }).await
 }
 
 #[derive(Deserialize)]
@@ -224,50 +110,24 @@ struct TextInput {
 
 /// Type a string of text on the keyboard.
 async fn type_text(
+    extract::State(queue): extract::State<Arc<ActionQueue>>,
     extract::Json(input): extract::Json<TextInput>,
-) -> Result<Json<Value>, ApiError> {
-    let mut enigo = create_enigo().await;
-    enigo.text(&input.text).unwrap();
-    Ok(Json(json!({
-        "status": "success",
-        "text": input.text
-    })))
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::TypeText {
+        text: input.text,
+    }).await
 }
 
 /// Press a key or key-combination on the keyboard.
 /// - This supports xdotool's `key` syntax.
 /// - Examples: "a", "Return", "alt+Tab", "ctrl+s", "Up", "KP_0" (for the numpad 0 key).
 async fn key(
+    extract::State(queue): extract::State<Arc<ActionQueue>>,
     extract::Json(input): extract::Json<TextInput>,
-) -> Result<Json<Value>, ApiError> {
-    let mut enigo = create_enigo().await;
-    
-    let key_press = KeyPress::from_str(&input.text)
-        .map_err(|e| ApiError::ComputerInputError(e))?;
-    
-    // Press modifiers
-    for modifier in &key_press.modifiers {
-        enigo.key(*modifier, Press).unwrap();
-        action_delay().await;
-    }
-    
-    // Press the main key
-    enigo.key(key_press.key, Press).unwrap();
-    action_delay().await;
-
-    // Release the main key
-    enigo.key(key_press.key, Release).unwrap();
-    action_delay().await;
-    // Release modifiers in reverse order
-    for modifier in key_press.modifiers.iter().rev() {
-        enigo.key(*modifier, Release).unwrap();
-        action_delay().await;
-    }
-
-    Ok(Json(json!({
-        "status": "success",
-        "key": input.text
-    })))
+) -> Result<ActionResult, ActionError> {
+    queue.execute_action(Action::KeyPress {
+        key: input.text,
+    }).await
 }
 
 #[tokio::main]
@@ -278,9 +138,9 @@ async fn main() {
         .with_level(true)
         .init();
 
+    let action_queue = create_action_queue().await;
 
     let app = Router::new()
-        // REST API
         .route("/", get(root))
         .route("/v1/actions/screenshot", get(screenshot))
         .route("/v1/actions/left_click", post(left_click))
@@ -292,6 +152,7 @@ async fn main() {
         .route("/v1/actions/left_click_drag", post(left_click_drag))
         .route("/v1/actions/type", post(type_text))
         .route("/v1/actions/key", post(key))
+        .with_state(action_queue)
         // Trace layer
         .layer(TraceLayer::new_for_http()
             .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
