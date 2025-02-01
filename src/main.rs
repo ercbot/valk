@@ -1,9 +1,11 @@
 use std::str::FromStr;
-
+use std::env;
 use axum::{
     http::StatusCode,
     routing::{get, post}, Router, extract,
-    response::{Json, IntoResponse}
+    response::{Json, IntoResponse},
+    response::Response,
+    extract::Request
 };
 use xcap::Monitor;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -15,15 +17,28 @@ use enigo::{
     Button, Coordinate::Abs, Direction::{Press, Release}, Enigo, Keyboard, Mouse, Settings
 };
 
+use tower_http::trace::{self, TraceLayer};
+use tracing::{info, Level, Span};
+
 mod key_press;
 
 use key_press::KeyPress;
 
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
-const ACTION_DELAY: Duration = Duration::from_millis(200);
+const ACTION_DELAY: Duration = Duration::from_millis(500);
 
 async fn action_delay() {
     sleep(ACTION_DELAY).await;
+}
+
+async fn create_enigo() -> Enigo {
+    let settings = Settings {
+        x11_display: Some(env::var("DISPLAY").unwrap()),
+        ..Settings::default()
+    };
+    let enigo = Enigo::new(&settings).unwrap();
+
+    enigo
 }
 
 async fn root() -> &'static str {
@@ -86,7 +101,7 @@ impl IntoResponse for ApiError {
 /// Click the left mouse button.
 async fn left_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
 
     // Perform a left click
     action_delay().await;
@@ -102,7 +117,7 @@ async fn left_click() -> Result<Json<Value>, ApiError> {
 /// Click the right mouse button.
 async fn right_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
     
     // Perform right click
     action_delay().await;
@@ -118,7 +133,7 @@ async fn right_click() -> Result<Json<Value>, ApiError> {
 /// Click the middle mouse button.
 async fn middle_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
 
     // Perform middle click
     action_delay().await;
@@ -134,7 +149,7 @@ async fn middle_click() -> Result<Json<Value>, ApiError> {
 /// Double-click the left mouse button.
 async fn double_click() -> Result<Json<Value>, ApiError> {
     // Initialize Enigo
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
 
     // Perform first left click
     action_delay().await;
@@ -155,7 +170,7 @@ async fn double_click() -> Result<Json<Value>, ApiError> {
 
 /// Get the current (x, y) pixel coordinate of the cursor on the screen.
 async fn cursor_position() -> Json<Value> {
-    let enigo = Enigo::new(&Settings::default()).unwrap();
+    let enigo = create_enigo().await;
     let position = enigo.location().unwrap();
     
     Json(json!({
@@ -168,7 +183,7 @@ async fn cursor_position() -> Json<Value> {
 async fn mouse_move(
     extract::Json(click_request): extract::Json<ClickRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
 
     action_delay().await;
 
@@ -183,7 +198,7 @@ async fn mouse_move(
 async fn left_click_drag(
     extract::Json(click_request): extract::Json<ClickRequest>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
 
     // Click and hold
     action_delay().await;
@@ -211,7 +226,7 @@ struct TextInput {
 async fn type_text(
     extract::Json(input): extract::Json<TextInput>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
     enigo.text(&input.text).unwrap();
     Ok(Json(json!({
         "status": "success",
@@ -225,7 +240,7 @@ async fn type_text(
 async fn key(
     extract::Json(input): extract::Json<TextInput>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut enigo = Enigo::new(&Settings::default()).unwrap();
+    let mut enigo = create_enigo().await;
     
     let key_press = KeyPress::from_str(&input.text)
         .map_err(|e| ApiError::ComputerInputError(e))?;
@@ -257,6 +272,13 @@ async fn key(
 
 #[tokio::main]
 async fn main() {
+    // Initialize tracing
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_level(true)
+        .init();
+
+
     let app = Router::new()
         // REST API
         .route("/", get(root))
@@ -269,7 +291,21 @@ async fn main() {
         .route("/v1/actions/mouse_move", post(mouse_move))
         .route("/v1/actions/left_click_drag", post(left_click_drag))
         .route("/v1/actions/type", post(type_text))
-        .route("/v1/actions/key", post(key));
+        .route("/v1/actions/key", post(key))
+        // Trace layer
+        .layer(TraceLayer::new_for_http()
+            .make_span_with(trace::DefaultMakeSpan::new().level(Level::INFO))
+            .on_request(|request: &Request<_>, _span: &Span| {
+                info!("Request: {} {}", request.method(), request.uri());
+            })
+            .on_response(|response: &Response<_>, latency: Duration, _span: &Span| {
+                info!(
+                    "Response: {} ({:?})",
+                    response.status(),
+                    latency
+                );
+            }),
+    );
 
     // run our app with hyper, listening globally on port 3000
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
