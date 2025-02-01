@@ -1,9 +1,10 @@
+use std::env;
 use std::sync::Arc;
 use serde_json::json;
 use tokio::sync::{Mutex, oneshot};
 use tokio::time::{sleep, Duration, timeout};
 use serde::{Serialize, Deserialize};
-use enigo::{Button, Coordinate::Abs, Direction::{Press, Release}, Enigo, Mouse, Keyboard};
+use enigo::{Button, Coordinate::Abs, Direction::{Press, Release}, Enigo, Mouse, Keyboard, Settings};
 use std::str::FromStr;
 use crate::key_press::KeyPress;
 use xcap::Monitor;
@@ -73,6 +74,18 @@ impl IntoResponse for ActionResult {
             "data": self.data
         })).into_response()
     }
+}
+
+pub async fn create_action_queue() -> Arc<ActionQueue> {
+    let settings = Settings {
+        x11_display: Some(env::var("DISPLAY").unwrap()),
+        ..Settings::default()
+    };
+    let enigo = Enigo::new(&settings).unwrap();
+    let queue = ActionQueue::new(enigo);
+    let queue = Arc::new(queue);
+    queue.start_processing().await;
+    queue
 }
 
 #[derive(Clone)]

@@ -1,11 +1,11 @@
-use std::{env, time::Duration};
+use std::time::Duration;
 use axum::{
     routing::{get, post}, Router, extract,
     response::Response,
     extract::Request
 };
 use serde::{Serialize, Deserialize};
-use enigo::{Enigo, Settings};
+
 use std::sync::Arc;
 
 use tower_http::trace::{self, TraceLayer};
@@ -16,19 +16,7 @@ mod action_queue;
 mod config;
 
 use config::Config;
-use action_queue::{ActionQueue, Action, ActionError, ActionResult};
-
-async fn create_action_queue() -> Arc<ActionQueue> {
-    let settings = Settings {
-        x11_display: Some(env::var("DISPLAY").unwrap()),
-        ..Settings::default()
-    };
-    let enigo = Enigo::new(&settings).unwrap();
-    let queue = ActionQueue::new(enigo);
-    let queue = Arc::new(queue);
-    queue.start_processing().await;
-    queue
-}
+use action_queue::{ActionQueue, Action, ActionError, ActionResult, create_action_queue};
 
 async fn root() -> &'static str {
     "Subspace is running"
