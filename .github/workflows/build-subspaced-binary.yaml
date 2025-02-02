@@ -15,6 +15,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  SUBSPACED_DIR: daemon/subspaced
 
 jobs:
   build-linux:
@@ -28,7 +29,7 @@ jobs:
 
       # Check code formatting
       - name: Check code format
-        working-directory: daemon/subspaced
+        working-directory: ${{ env.SUBSPACED_DIR }}
         run: cargo fmt -- --check
 
       # Install system dependencies that were in your Dockerfile
@@ -49,31 +50,31 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            daemon/subspaced/target
+            ${{ env.SUBSPACED_DIR }}/target
             ~/.cargo/registry
             ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('daemon/subspaced/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('${{ env.SUBSPACED_DIR }}/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
       # Build and test directly with cargo
       - name: Build binary
-        working-directory: daemon/subspaced
+        working-directory: ${{ env.SUBSPACED_DIR }}
         run: cargo build --release
 
       - name: Run tests
-        working-directory: daemon/subspaced
-        run: cargo test --no-build
+        working-directory: ${{ env.SUBSPACED_DIR }}
+        run: cargo test
 
       # Upload artifacts and create release remain the same
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: subspaced-linux-x86_64
-          path: daemon/subspaced/target/release/subspaced
+          path: ${{ env.SUBSPACED_DIR }}/target/release/subspaced
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: daemon/subspaced/target/release/subspaced
+          files: ${{ env.SUBSPACED_DIR }}/target/release/subspaced
           generate_release_notes: true
