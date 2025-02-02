@@ -26,12 +26,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Get Previous Workflow Info
+        run: |
+          echo "Previous workflow ID: ${{ github.event.workflow_run.id }}"
+
       # Download the binary from the previous workflow
       - name: Download binary artifact
         uses: actions/download-artifact@v4
         with:
           name: subspaced-linux-x86_64
           path: examples/chromium-demo/subspaced
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
       # Ensure binary is executable
