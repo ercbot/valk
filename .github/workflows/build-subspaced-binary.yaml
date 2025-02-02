@@ -63,7 +63,7 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ env.SUBSPACED_DIR }}
-        run: cargo test
+        run: cargo test --release
 
       # Upload artifacts and create release remain the same
       - name: Upload binary artifact
