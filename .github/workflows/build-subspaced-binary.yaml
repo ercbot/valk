@@ -5,13 +5,13 @@ on:
     branches: [ "main" ]
     paths:
       - 'daemon/subspaced/**'
-      - '${{ github.workflow_ref }}'
+      - '.github/workflows/build-subspaced-binary.yaml'
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
     paths:
       - 'daemon/subspaced/**'
-      - '${{ github.workflow_ref }}'
+      - '.github/workflows/build-subspaced-binary.yaml'
   workflow_dispatch:
 
 env:
