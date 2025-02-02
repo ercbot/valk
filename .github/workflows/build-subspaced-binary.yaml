@@ -42,8 +42,8 @@ jobs:
       - name: Build cross Docker image
         uses: docker/build-push-action@v5
         with:
-          context: daemon
-          file: daemon/Dockerfile.cross
+          context: daemon/subspaced
+          file: daemon/subspaced/Dockerfile.cross
           push: true
           tags: ${{ env.REGISTRY }}/${{ github.repository }}-cross:latest
           cache-from: type=gha
@@ -54,7 +54,7 @@ jobs:
         run: cargo install cross --git https://github.com/cross-rs/cross
 
       - name: Build binary
-        working-directory: daemon
+        working-directory: daemon/subspaced
         run: cross build --target x86_64-unknown-linux-gnu --release
 
       # Upload the binary as an artifact
@@ -62,12 +62,12 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: subspaced-linux-x86_64
-          path: daemon/target/x86_64-unknown-linux-gnu/release/subspaced
+          path: daemon/subspaced/target/x86_64-unknown-linux-gnu/release/subspaced
 
       # If this is a tag, create a GitHub release with the binary
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: daemon/target/x86_64-unknown-linux-gnu/release/subspaced
+          files: daemon/subspaced/target/x86_64-unknown-linux-gnu/release/subspaced
           generate_release_notes: true
