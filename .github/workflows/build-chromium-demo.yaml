@@ -26,10 +26,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Previous Workflow Info
-        run: |
-          echo "Previous workflow ID: ${{ github.event.workflow_run.id }}"
-
       # Download the binary from the previous workflow
       - name: Download binary artifact
         uses: actions/download-artifact@v4
