@@ -45,17 +45,6 @@ jobs:
             libxtst-dev \
             libxdo-dev
 
-      # Cache Cargo artifacts
-      - name: Cache cargo
-        uses: actions/cache@v3
-        with:
-          path: |
-            ${{ env.SUBSPACED_DIR }}/target
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-${{ hashFiles('${{ env.SUBSPACED_DIR }}/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
-
       # Build and test directly with cargo
       - name: Build binary
         working-directory: ${{ env.SUBSPACED_DIR }}
