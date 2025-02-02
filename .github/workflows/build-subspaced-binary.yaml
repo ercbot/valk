@@ -49,6 +49,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # Cache Cargo artifacts (including target folder)
+      - name: Cache cargo
+        uses: actions/cache@v3
+        with:
+          path: |
+            daemon/subspaced/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('daemon/subspaced/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
       # Install and use cross to build the binary
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross
@@ -59,7 +70,7 @@ jobs:
 
       - name: Run tests
         working-directory: daemon/subspaced
-        run: cross test --target x86_64-unknown-linux-gnu
+        run: cross test --target x86_64-unknown-linux-gnu --no-build
 
       # Upload the binary as an artifact
       - name: Upload binary artifact
