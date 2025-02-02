@@ -16,9 +16,11 @@ use tracing::{info, Level, Span};
 mod action_queue;
 mod config;
 mod key_press;
+mod monitor;
 
 use action_queue::{create_action_queue, Action, ActionError, ActionQueue, ActionResult};
 use config::Config;
+use monitor::monitor_websocket;
 
 use os_info;
 use xcap;
@@ -188,6 +190,7 @@ async fn main() {
         .route("/v1/actions/left_click_drag", post(left_click_drag))
         .route("/v1/actions/type", post(type_text))
         .route("/v1/actions/key", post(key))
+        .route("/ws/monitor", get(monitor_websocket))
         .with_state(action_queue)
         // Trace layer
         .layer(

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = "0.8.1"
+axum = { version = "0.8.1", features = ["ws"] }
 base64 = "0.22.1"
 enigo = "0.3.0"
 image = "0.25.5"

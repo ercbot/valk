@@ -1,4 +1,5 @@
 use crate::key_press::KeyPress;
+use std::time::{SystemTime, UNIX_EPOCH};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -15,7 +16,7 @@ use std::env;
 use std::io::Cursor;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::time::{sleep, timeout, Duration};
 use xcap::Monitor;
 
@@ -24,7 +25,7 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 
 /// Represents possible errors that can occur during action execution
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub enum ActionError {
     /// Action took too long to complete
     Timeout,
@@ -99,18 +100,33 @@ pub async fn create_action_queue() -> Arc<ActionQueue> {
 pub struct GenericActionQueue<T: Mouse + Keyboard + Send + 'static> {
     queue: Arc<Mutex<Vec<(Action, oneshot::Sender<Result<ActionResult, ActionError>>)>>>,
     input_driver: Arc<Mutex<T>>,
+    monitor_tx: broadcast::Sender<MonitorEvent>,
 }
 
 // Type alias for the "real" production ActionQueue
 pub type ActionQueue = GenericActionQueue<Enigo>;
 
+#[derive(Clone, Debug, Serialize)]
+pub struct MonitorEvent {
+    pub timestamp: u64,
+    pub action: Action,
+    pub result: Result<ActionResult, ActionError>,
+}
+
 // Implementation stays on the generic type
 impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
     pub fn new(enigo: T) -> Self {
+        let (monitor_tx, _) = broadcast::channel(100); // Buffer size of 100 event
+
         GenericActionQueue {
             queue: Arc::new(Mutex::new(Vec::new())),
             input_driver: Arc::new(Mutex::new(enigo)),
+            monitor_tx
         }
+    }
+
+    pub fn subscribe_monitor(&self) -> broadcast::Receiver<MonitorEvent> {
+        self.monitor_tx.subscribe()
     }
 
     // Add an action to the queue
@@ -151,6 +167,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
     pub async fn start_processing(&self) {
         let queue_clone = self.queue.clone();
         let input_driver_clone = self.input_driver.clone();
+        let monitor_tx = self.monitor_tx.clone();
 
         tokio::spawn(async move {
             loop {
@@ -163,7 +180,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                     let mut input_driver = input_driver_clone.lock().await;
                     Self::action_delay().await;
 
-                    let result = match action {
+                    let result = match &action {
                         Action::LeftClick => {
                             let press_result = input_driver.button(Button::Left, Press);
                             let release_result = if press_result.is_ok() {
@@ -236,14 +253,14 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                         }
 
                         Action::MouseMove { x, y } => input_driver
-                            .move_mouse(x as i32, y as i32, Abs)
+                            .move_mouse(*x as i32, *y as i32, Abs)
                             .map(|_| ActionResult { data: None })
                             .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
                         Action::LeftClickDrag { x, y } => {
                             match (
                                 input_driver.button(Button::Left, Press),
                                 Self::action_delay().await,
-                                input_driver.move_mouse(x as i32, y as i32, Abs),
+                                input_driver.move_mouse(*x as i32, *y as i32, Abs),
                                 Self::action_delay().await,
                                 input_driver.button(Button::Left, Release),
                             ) {
@@ -341,6 +358,17 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                                 })
                         }
                     };
+
+                    // Send monitor event
+                    let monitor_event = MonitorEvent {
+                        timestamp: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64,
+                        action: action.clone(),
+                        result: result.clone(),
+                    };
+                    let _ = monitor_tx.send(monitor_event);
 
                     // Notify completion with result
                     let _ = tx.send(result);
