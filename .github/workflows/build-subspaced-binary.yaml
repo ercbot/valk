@@ -3,9 +3,16 @@ name: Build Subspaced Binary
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - 'daemon/subspaced/**'
+      - '${{ github.workflow_ref }}'
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
+    paths:
+      - 'daemon/subspaced/**'
+      - '${{ github.workflow_ref }}'
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -21,20 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Check if Dockerfile.cross or Cross.toml have changed
-      - name: Check for Docker changes
-        id: check_changes
-        run: |
-          echo "dockerfile_changed=$(git diff --quiet HEAD^ HEAD daemon/Dockerfile.cross daemon/Cross.toml && echo false || echo true)" >> $GITHUB_OUTPUT
-        continue-on-error: true  # In case this is the first commit
-
       # Build our custom cross Docker image only if files changed or this is the first run
       - name: Set up Docker Buildx
-        if: steps.check_changes.outcome == 'failure' || steps.check_changes.outputs.dockerfile_changed == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
-        if: steps.check_changes.outcome == 'failure' || steps.check_changes.outputs.dockerfile_changed == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -42,7 +40,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build cross Docker image
-        if: steps.check_changes.outcome == 'failure' || steps.check_changes.outputs.dockerfile_changed == 'true'
         uses: docker/build-push-action@v5
         with:
           context: daemon
