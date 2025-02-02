@@ -1,5 +1,4 @@
 name: Build Subspaced Binary
-
 on:
   push:
     branches: [ "main" ]
@@ -16,7 +15,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  REGISTRY: ghcr.io
 
 jobs:
   build-linux:
@@ -24,32 +22,29 @@ jobs:
     permissions:
       contents: read
       packages: write
-
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
 
-      # Build our custom cross Docker image only if files changed or this is the first run
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      # Check code formatting
+      - name: Check code format
+        working-directory: daemon/subspaced
+        run: cargo fmt -- --check
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      # Install system dependencies that were in your Dockerfile
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            libxcb1-dev \
+            libx11-dev \
+            libxi-dev \
+            libxext-dev \
+            libxtst-dev \
+            libxdo-dev
 
-      - name: Build cross Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: daemon/subspaced
-          file: daemon/subspaced/Dockerfile.cross
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ github.repository }}-cross:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      # Cache Cargo artifacts (including target folder)
+      # Cache Cargo artifacts
       - name: Cache cargo
         uses: actions/cache@v3
         with:
@@ -60,29 +55,25 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('daemon/subspaced/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
-      # Install and use cross to build the binary
-      - name: Install cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
+      # Build and test directly with cargo
       - name: Build binary
         working-directory: daemon/subspaced
-        run: cross build --target x86_64-unknown-linux-gnu --release
+        run: cargo build --release
 
       - name: Run tests
         working-directory: daemon/subspaced
-        run: cross test --target x86_64-unknown-linux-gnu --no-build
+        run: cargo test --no-build
 
-      # Upload the binary as an artifact
+      # Upload artifacts and create release remain the same
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: subspaced-linux-x86_64
-          path: daemon/subspaced/target/x86_64-unknown-linux-gnu/release/subspaced
+          path: daemon/subspaced/target/release/subspaced
 
-      # If this is a tag, create a GitHub release with the binary
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: daemon/subspaced/target/x86_64-unknown-linux-gnu/release/subspaced
+          files: daemon/subspaced/target/release/subspaced
           generate_release_notes: true
