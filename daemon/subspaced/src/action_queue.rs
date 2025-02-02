@@ -1,5 +1,4 @@
 use crate::key_press::KeyPress;
-use std::time::{SystemTime, UNIX_EPOCH};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
@@ -16,6 +15,7 @@ use std::env;
 use std::io::Cursor;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::time::{sleep, timeout, Duration};
 use xcap::Monitor;
@@ -121,7 +121,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
         GenericActionQueue {
             queue: Arc::new(Mutex::new(Vec::new())),
             input_driver: Arc::new(Mutex::new(enigo)),
-            monitor_tx
+            monitor_tx,
         }
     }
 
@@ -362,9 +362,9 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                     // Send monitor event
                     let monitor_event = MonitorEvent {
                         timestamp: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64,
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64,
                         action: action.clone(),
                         result: result.clone(),
                     };
