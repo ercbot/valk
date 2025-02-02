@@ -1,0 +1,78 @@
+name: Build Demo Docker Image
+
+on:
+  # Run when the Rust build completes successfully
+  workflow_run:
+    workflows: ["Build Subspaced Binary"]
+    types:
+      - completed
+  # Also allow manual triggers
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-chromium-demo
+
+jobs:
+  build-and-push:
+    # Only run if the triggering workflow succeeded or this was manually triggered
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Download the binary from the previous workflow
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: subspaced-linux-x86_64
+          path: examples/claude-agent/subspaced
+          run-id: ${{ github.event.workflow_run.id }}
+        # Allow continuing even if artifact download fails (for manual triggers)
+        continue-on-error: true
+
+      # Ensure binary is executable
+      - name: Make binary executable
+        run: |
+          if [ -f examples/claude-agent/subspaced/subspaced ]; then
+            chmod +x examples/claude-agent/subspaced/subspaced
+          else
+            echo "Warning: Binary not found, Docker build may fail"
+          fi
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: examples/chromium-demo
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
