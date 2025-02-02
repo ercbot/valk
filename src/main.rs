@@ -1,8 +1,6 @@
 use std::time::Duration;
 use axum::{
-    routing::{get, post}, Router, extract,
-    response::Response,
-    extract::Request
+    extract::{self, Request}, http::StatusCode, response::Response, routing::{get, post}, Json, Router
 };
 use serde::{Serialize, Deserialize};
 
@@ -18,8 +16,37 @@ mod config;
 use config::Config;
 use action_queue::{ActionQueue, Action, ActionError, ActionResult, create_action_queue};
 
+use os_info;
+use xcap;
+
 async fn root() -> &'static str {
     "Subspace is running"
+}
+
+#[derive(Debug, Serialize)]
+struct ComputerInfo {
+    os_type: String,
+    os_version: String,
+    display_width: u32,
+    display_height: u32,
+}
+
+/// Get information about the computer system
+async fn system_info() -> Result<Json<ComputerInfo>, (StatusCode, String)> {
+    let monitor = xcap::Monitor::all()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get display info: {}", e)))?
+        .first()
+        .cloned()
+        .ok_or((StatusCode::INTERNAL_SERVER_ERROR, "No monitor found".to_string()))?;
+    
+    let os_info = os_info::get();
+    
+    Ok(Json(ComputerInfo {
+        os_type: os_info.os_type().to_string(),
+        os_version: os_info.version().to_string(),
+        display_width: monitor.width() as u32,
+        display_height: monitor.height() as u32,
+    }))
 }
 
 /// Take a screenshot of the screen.
@@ -134,6 +161,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route("/v1/system/info", get(system_info))
         .route("/v1/actions/screenshot", get(screenshot))
         .route("/v1/actions/left_click", post(left_click))
         .route("/v1/actions/right_click", post(right_click))
