@@ -1,2 +1,2 @@
 [target.x86_64-unknown-linux-gnu]
-image = "subspace/subspaced-cross"
+image = "ghcr.io/ercbot/subspace-cross:latest"
