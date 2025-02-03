@@ -512,8 +512,8 @@ mod tests {
         assert!(result.is_ok());
 
         let enigo = queue.input_driver.lock().await;
-        // The last action should be releasing the main key
-        assert!(enigo.last_action.contains("key_Unicode"));
+        // The last action should be releasing the ctrl key
+        assert!(enigo.last_action.contains("key_Control_Release"));
     }
 
     #[tokio::test]
