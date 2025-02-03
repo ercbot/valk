@@ -262,9 +262,9 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                         Action::LeftClickDrag { x, y } => {
                             match (
                                 input_driver.button(Button::Left, Press),
-                                Self::action_delay().await,
+                                sleep(DOUBLE_CLICK_DELAY).await,
                                 input_driver.move_mouse(*x as i32, *y as i32, Abs),
-                                Self::action_delay().await,
+                                sleep(DOUBLE_CLICK_DELAY).await,
                                 input_driver.button(Button::Left, Release),
                             ) {
                                 (Ok(_), _, Ok(_), _, Ok(_)) => Ok(ActionResult { data: None }),
