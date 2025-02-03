@@ -292,6 +292,12 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                                         .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
                                     Self::action_delay().await;
 
+                                    // Release the main key
+                                    input_driver
+                                        .key(key_press.key, Release)
+                                        .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
+                                    Self::action_delay().await;
+
                                     // Release modifiers in reverse order
                                     for modifier in key_press.modifiers.iter().rev() {
                                         input_driver.key(*modifier, Release).map_err(|e| {
@@ -300,11 +306,6 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                                         Self::action_delay().await;
                                     }
 
-                                    // Release the main key
-                                    input_driver
-                                        .key(key_press.key, Release)
-                                        .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
-                                    Self::action_delay().await;
                                     Ok(())
                                 }
                                 .await;
