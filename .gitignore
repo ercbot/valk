@@ -1,0 +1,11 @@
+*.egg-info
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+
+.vscode
+daemon/subspaced/target
+.scripts
+subspace_viewer.html
