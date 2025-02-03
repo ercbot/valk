@@ -260,17 +260,28 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                             .map(|_| ActionResult { data: None })
                             .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
                         Action::LeftClickDrag { x, y } => {
-                            match (
-                                input_driver.button(Button::Left, Press),
-                                sleep(DOUBLE_CLICK_DELAY).await,
-                                input_driver.move_mouse(*x as i32, *y as i32, Abs),
-                                sleep(DOUBLE_CLICK_DELAY).await,
-                                input_driver.button(Button::Left, Release),
-                            ) {
-                                (Ok(_), _, Ok(_), _, Ok(_)) => Ok(ActionResult { data: None }),
-                                _ => Err(ActionError::ExecutionFailed(
-                                    "Failed to execute left click drag".into(),
-                                )),
+                            // First press and hold the left button
+                            if let Err(e) = input_driver.button(Button::Left, Press) {
+                                return Err(ActionError::ExecutionFailed(e.to_string()))
+                                    as Result<ActionResult, ActionError>;
+                            }
+
+                            sleep(DOUBLE_CLICK_DELAY).await;
+
+                            // Move while holding button
+                            if let Err(e) = input_driver.move_mouse(*x as i32, *y as i32, Abs) {
+                                // Cleanup: release button if move fails
+                                let _ = input_driver.button(Button::Left, Release);
+                                return Err(ActionError::ExecutionFailed(e.to_string()))
+                                    as Result<ActionResult, ActionError>;
+                            }
+
+                            sleep(DOUBLE_CLICK_DELAY).await;
+
+                            // Release button
+                            match input_driver.button(Button::Left, Release) {
+                                Ok(_) => Ok(ActionResult { data: None }),
+                                Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
                             }
                         }
 
