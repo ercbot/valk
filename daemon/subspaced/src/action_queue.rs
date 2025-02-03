@@ -23,6 +23,7 @@ use xcap::Monitor;
 const ACTION_DELAY: Duration = Duration::from_millis(500);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
+const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
 
 /// Represents possible errors that can occur during action execution
 #[derive(Debug, Clone, Serialize)]
@@ -226,18 +227,20 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                             // First click
                             let first_click = match (
                                 input_driver.button(Button::Left, Press),
-                                Self::action_delay().await,
+                                sleep(DOUBLE_CLICK_DELAY).await,
                                 input_driver.button(Button::Left, Release),
                             ) {
                                 (Ok(_), _, Ok(_)) => true,
                                 _ => false,
                             };
 
+                            sleep(DOUBLE_CLICK_DELAY).await;
+
                             if first_click {
                                 // Second click
                                 match (
                                     input_driver.button(Button::Left, Press),
-                                    Self::action_delay().await,
+                                    sleep(DOUBLE_CLICK_DELAY).await,
                                     input_driver.button(Button::Left, Release),
                                 ) {
                                     (Ok(_), _, Ok(_)) => Ok(ActionResult { data: None }),
