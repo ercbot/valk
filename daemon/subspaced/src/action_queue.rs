@@ -4,7 +4,7 @@ use axum::response::{IntoResponse, Json};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use enigo::{
     Button,
-    Coordinate::Abs,
+    Coordinate::{Abs, Rel},
     Direction::{Press, Release},
     Enigo, Keyboard, Mouse, Settings,
 };
@@ -268,12 +268,47 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
 
                             sleep(DOUBLE_CLICK_DELAY).await;
 
-                            // Move while holding button
-                            if let Err(e) = input_driver.move_mouse(*x as i32, *y as i32, Abs) {
-                                // Cleanup: release button if move fails
-                                let _ = input_driver.button(Button::Left, Release);
-                                return Err(ActionError::ExecutionFailed(e.to_string()))
-                                    as Result<ActionResult, ActionError>;
+                            // We need to use interpolation to drag the mouse
+                            let current_pos = input_driver.location().unwrap();
+                            let target_pos = (*x as i32, *y as i32);
+
+                            let distance = (((current_pos.0 - target_pos.0).pow(2)
+                                + (current_pos.1 - target_pos.1).pow(2))
+                                as f64)
+                                .sqrt();
+                            let steps = (distance / 10.0).max(1.0); // One step for every 10 euclidan px traveled
+                            let step_x = (target_pos.0 - current_pos.0) as f64 / steps;
+                            let step_y = (target_pos.1 - current_pos.1) as f64 / steps;
+
+                            // Do relative moves for all but last step
+                            for i in 0..steps as u32 {
+                                if i == steps as u32 - 1 {
+                                    // Last step - do absolute move to target
+                                    match input_driver.move_mouse(target_pos.0, target_pos.1, Abs) {
+                                        Ok(_) => (),
+                                        Err(e) => {
+                                            // Cleanup: release button if move fails
+                                            let _ = input_driver.button(Button::Left, Release);
+                                            return Err(ActionError::ExecutionFailed(
+                                                e.to_string(),
+                                            ));
+                                        }
+                                    };
+                                } else {
+                                    // Regular relative move for intermediate steps
+                                    match input_driver.move_mouse(step_x as i32, step_y as i32, Rel)
+                                    {
+                                        Ok(_) => (),
+                                        Err(e) => {
+                                            // Cleanup: release button if move fails
+                                            let _ = input_driver.button(Button::Left, Release);
+                                            return Err(ActionError::ExecutionFailed(
+                                                e.to_string(),
+                                            ));
+                                        }
+                                    };
+                                    sleep(Duration::from_millis(10)).await;
+                                }
                             }
 
                             sleep(DOUBLE_CLICK_DELAY).await;
@@ -284,7 +319,6 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                                 Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
                             }
                         }
-
                         Action::TypeText { text } => input_driver
                             .text(&text)
                             .map(|_| ActionResult { data: None })
