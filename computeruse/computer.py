@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Tuple
 import httpx
 from .debug_viewer import VIEWER_HTML
 

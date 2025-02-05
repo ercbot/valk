@@ -26,6 +26,10 @@ computer.move_mouse(x=100, y=100).left_click()
 computer.type("Hello, World!")
 ```
 
+# Remote Server
+
+In order to make use of cuse you will need to have a machine running with the cused server on it. We provide a few docker images as demos. 
+
 ## Features
 
 - Mouse control (move, click, drag)
