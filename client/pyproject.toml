@@ -1,9 +1,17 @@
 [project]
-name = "subspace"
-version = "0.1.0"
+name = "cuse"
+version = "0.0.1"
 description = "Remote control of a computer"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.25.1",
 ]
+license = "MIT"
+
+[tool.hatch.build.targets.wheel]
+packages = ["computeruse"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from subspace import Computer
+from computeruse import Computer
 import time
 
 DOCKER_IMAGE = "ghcr.io/ercbot/subspace-chromium-demo:latest"
@@ -80,8 +80,8 @@ def main():
     computer.type("https://claude.site/artifacts/0c3cb56f-62ae-44f6-b398-7145a8ec6cfa")
     computer.key("enter")
 
-    # Wait for 3 seconds for the page to load
-    time.sleep(3)
+    # Wait for 10 seconds for the page to load, depends on your internet speed and claude.site load speed
+    time.sleep(10)
 
     # Take a screenshot of the current page
     computer.screenshot()
@@ -99,10 +99,10 @@ def main():
     computer.move_mouse(x=800, y=408).double_click().screenshot()
 
     # Hover over the blue square
-    computer.move_mouse(x=1043, y=408).screenshot()
+    computer.move_mouse(x=1043, y=565).screenshot()
 
     # Drag the blue square to the target zone
-    computer.move_mouse(x=1043, y=408).left_click_drag(x=1043, y=408).screenshot()
+    computer.move_mouse(x=814, y=588).left_click_drag(x=1043, y=408).screenshot()
 
 
 if __name__ == "__main__":

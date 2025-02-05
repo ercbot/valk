@@ -9,3 +9,8 @@
 daemon/subspaced/target
 .scripts
 subspace_viewer.html
+
+examples/chromium-demo/subspaced/
+
+client/dist
+client/build
