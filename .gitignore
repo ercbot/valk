@@ -6,11 +6,9 @@
 *.pyz
 
 .vscode
-daemon/subspaced/target
+
 .scripts
-subspace_viewer.html
+cuse_viewer.html
 
-examples/chromium-demo/subspaced/
-
-client/dist
-client/build
+dist
+build

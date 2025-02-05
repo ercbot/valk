@@ -2,7 +2,7 @@ VIEWER_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Subspace Monitor</title>
+    <title>Cuse Debug Viewer</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
@@ -104,11 +104,12 @@ VIEWER_HTML = """
     </style>
 </head>
 <body>
-    <h1>Subspace Monitor</h1>
+    <h1>Cuse Debug Viewer</h1>
     <div id="status" class="disconnected">Disconnected</div>
     <button class="clear-btn" onclick="clearEvents()">Clear Events</button>
     <div id="events"></div>
     <div id="screenshot-modal" class="screenshot-modal" onclick="hideScreenshot()">
+
         <img id="modal-image">
     </div>
 
@@ -120,7 +121,7 @@ VIEWER_HTML = """
         const modalImg = document.getElementById('modal-image');
 
         function connect() {
-            ws = new WebSocket('ws://SUBSPACE_BASE_URL/ws/monitor');
+            ws = new WebSocket('ws://CUSE_BASE_URL/ws/monitor');
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
                 statusDiv.className = 'connected';

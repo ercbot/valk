@@ -4,7 +4,6 @@ import httpx
 from .debug_viewer import VIEWER_HTML
 
 
-
 class APIError(Exception):
     """Custom exception for API-related errors"""
 
@@ -131,7 +130,6 @@ class Computer:
         """Type the specified text"""
         response = self._client.post("/v1/actions/type", json={"text": text})
         if response.status_code != 200:
-
             raise APIError(
                 f"Failed to type text: {response.status_code} - {response.text}"
             )
@@ -158,8 +156,13 @@ class Computer:
         import threading
 
         # Write the HTML file
-        viewer_path = Path("subspace_viewer.html")
-        viewer_path.write_text(VIEWER_HTML.replace('SUBSPACE_BASE_URL', str(self._client.base_url).lstrip('http://')))
+        file_name = "cuse_viewer.html"
+        viewer_path = Path(file_name)
+        viewer_path.write_text(
+            VIEWER_HTML.replace(
+                "CUSE_BASE_URL", str(self._client.base_url).lstrip("http://")
+            )
+        )
 
         # Start a simple HTTP server
         class Handler(http.server.SimpleHTTPRequestHandler):
@@ -176,6 +179,6 @@ class Computer:
         thread.start()
 
         # Open browser
-        webbrowser.open(f"http://localhost:{port}/subspace_viewer.html")
+        webbrowser.open(f"http://localhost:{port}/{file_name}")
 
-        print(f"Debug viewer started at http://localhost:{port}/subspace_viewer.html")
+        print(f"Debug viewer started at http://localhost:{port}/{file_name}")

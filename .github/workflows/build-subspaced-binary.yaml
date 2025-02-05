@@ -1,0 +1,75 @@
+name: Build Subspaced Binary
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'cused/**'
+      - '.github/workflows/build-cused-binary.yaml'
+
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'cused/**'
+      - '.github/workflows/build-cused-binary.yaml'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CUSED_DIR: cused
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-20.04
+
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Check code formatting
+      - name: Check code format
+        working-directory: ${{ env.CUSED_DIR }}
+        run: cargo fmt -- --check
+
+
+      # Install system dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libdbus-1-dev \
+            libxcb1-dev \
+            libx11-dev \
+            libxi-dev \
+            libxext-dev \
+            libxtst-dev \
+            libxdo-dev
+
+      # Build and test directly with cargo
+      - name: Build binary
+        working-directory: ${{ env.CUSED_DIR }}
+        run: cargo build --release
+
+
+      - name: Run tests
+        working-directory: ${{ env.CUSED_DIR }}
+        run: cargo test --release
+
+
+      # Upload artifacts and create release remain the same
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cused-linux-x86_64
+          path: ${{ env.CUSED_DIR }}/target/release/cused
+
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ env.CUSED_DIR }}/target/release/cused
+          generate_release_notes: true
