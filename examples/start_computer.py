@@ -3,7 +3,7 @@ import sys
 from computeruse import Computer
 import time
 
-DOCKER_IMAGE = "ghcr.io/ercbot/subspace-chromium-demo:latest"
+DOCKER_IMAGE = "ghcr.io/ercbot/cuse-chromium-demo:latest"
 CONTAINER_NAME = "chromium-demo"
 
 

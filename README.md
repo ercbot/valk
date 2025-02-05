@@ -1,73 +1,44 @@
-# Subspace
+# ComputerUse (cuse)
 
-Subspace is an infrastructure platform that enables AI agents to interact with computers and web browsers. It provides the foundational layer that allows AI models to directly control and interact with graphical computer interfaces.
+A Python library for remote controlling computers with AI agents. This package provides a simple interface for programmatic control of mouse movements, keyboard input, and screen capture.
 
-## Features
+## Installation
 
-- REST API for computer control
-- Virtual display management with Xvfb
-- Browser automation and interaction
-- Python SDK with Anthropic/OpenAI compatibility
-- Containerized environment with debugging support
-- Basic security and process management
+```bash
+pip install cuse
+```
 
 ## Quick Start
 
-```bash
-# Pull and run the container
-docker pull ghcr.io/ercbot/subspace-chromium-demo
-docker run -p 17401:17401 ghcr.io/ercbot/subspace-chromium-demo
-
-# Install the Python SDK
-pip install subspace-computer
-```
-
 ```python
-from subspace import Computer
+from computeruse import Computer
 
-# Create a computer for AI use
-computer = Computer()
+# Initialize a computer connection
+computer = Computer("http://localhost:17014")
 
-# Give AI model access
-agent.give_browser_access(computer)
+# Take a screenshot
+screenshot = computer.screenshot()
 
-# Start monitoring
-computer.start_debug_viewer()
+# Move mouse and click
+computer.move_mouse(x=100, y=100).left_click()
+
+# Type text
+computer.type("Hello, World!")
 ```
 
-## Architecture
+## Features
 
-Subspace consists of three main components:
+- Mouse control (move, click, drag)
+- Keyboard input
+- Screen capture
+- System information
+- Debug viewer
 
-1. **Daemon (subspaced)**: A Rust-based service that provides a REST API for computer control
-2. **Python SDK**: A clean, simple API for AI model integration
-3. **Container**: A lightweight environment with Chromium and virtual display support
+## Requirements
 
-## Key Differentiator
+- Python 3.12 or higher
+- Docker (for running the computer server)
 
-While traditional automation tools focus on scripted sequences, Subspace enables true AI agency:
-- **Web Automation**: "Do exactly these steps"
-- **Subspace**: "Here's a browser, accomplish this goal"
+## License
 
-While the demo focuses on web browsing capabilities, being at the OS level can enable full computer control
-
-## Use Cases
-
-- Research assistants that browse the web
-- Shopping agents that compare prices
-- Technical support that follows documentation
-- Data gathering that adapts to site changes
-
-## Development Status
-
-This is the pre v0.1.0 release focusing on core infrastructure. Current features include:
-- Basic computer control API
-- Python SDK
-- Container image
-- Basic documentation
-- Simple debugging tools
-
-## Acknowledgments
-
-Subspace is built with and inspired by:
-- [Anthropic Claude](https://www.anthropic.com/)
+MIT License

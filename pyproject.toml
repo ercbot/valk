@@ -15,3 +15,6 @@ packages = ["computeruse"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.urls]
+Repository = "https://github.com/ercbot/computeruse"
