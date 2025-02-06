@@ -1,5 +1,5 @@
-cused/target
+target
 
 # Cross is a tool for building and running Rust programs on different platforms. useful for local development.
-cused/.cross
-cused/Cross.toml
+.cross
+Cross.toml

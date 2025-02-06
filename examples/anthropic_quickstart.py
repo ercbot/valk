@@ -1,15 +1,7 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "anthropic",
-# ]
-# ///
 import os
-import json
 import anthropic
-from typing import Dict, Any, Literal
 from cuse.integrations.anthropic import ComputerTool
-
+from cuse import Computer
 
 # Get API key from env or prompt user
 api_key = os.getenv("ANTHROPIC_API_KEY")
@@ -18,85 +10,98 @@ if not api_key:
 
 # Initialize client
 client = anthropic.Anthropic(api_key=api_key)
-messages = []
 
 # System prompt provides context about the environment
 SYSTEM_PROMPT = """You are utilizing an Ubuntu virtual machine using debian:bookworm-slim.
 You have access to computer control capabilities through the computer tool.
 """
 
-# Initialize tools
-computer = ComputerTool()
 
-print("Chat with Claude (type 'quit' to exit)")
-print("-" * 40)
+def handle_response(response, messages, computer_tool):
+    """Recursively handle responses and tool calls"""
+    messages.append({"role": "assistant", "content": response.content})
 
-while True:
-    user_input = input("You: ").strip()
-
-    if user_input.lower() == "quit":
-        break
-
-    messages.append({"role": "user", "content": user_input})
-
-    # Call Claude with computer use beta flag
-    response = client.beta.messages.create(
-        model="claude-3-5-sonnet-latest",
-        messages=messages,
-        system=SYSTEM_PROMPT,
-        max_tokens=1024,
-        tools=[computer.to_params()],
-        betas=["computer-use-2024-10-22"],
-    )
-
-    assistant_message = response.content[0].text
-
-    # Check for tool use in the response
-    if hasattr(response.content[0], "tool_calls") and response.content[0].tool_calls:
-        for tool_call in response.content[0].tool_calls:
+    for content_block in response.content:
+        if content_block.type == "text":
+            print("Claude:", content_block.text)
+        elif content_block.type == "tool_use":
+            print("- Tool: ", content_block.input)
             # Execute the tool call
-            result = computer.run(**json.loads(tool_call.parameters))
+            result = computer_tool(**content_block.input)
+
+            # Prepare tool result content
+            content = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": content_block.id,
+                    "content": result.output,
+                }
+            ]
+
+            if result.base64_image:
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": result.base64_image,
+                        },
+                    }
+                )
 
             # Add tool result to messages
-            messages.append(
-                {
-                    "role": "tool",
-                    "content": result["output"]
-                    if not result["error"]
-                    else result["error"],
-                    "tool_name": "computer",
-                }
-            )
+            messages.append({"role": "user", "content": content})
 
-            # Get follow-up response from Claude
-            response = client.messages.create(
+            # Get follow-up response and handle recursively
+            follow_up = client.beta.messages.create(
                 model="claude-3-5-sonnet-latest",
                 messages=messages,
                 system=SYSTEM_PROMPT,
                 max_tokens=1024,
-                tools=[
-                    {
-                        "type": "function",
-                        "function": {
-                            "name": "computer",
-                            "description": "Control computer actions",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {
-                                    "action": {
-                                        "type": "string",
-                                        "description": "The action to perform",
-                                    }
-                                },
-                            },
-                        },
-                    }
-                ],
+                tools=[computer_tool.to_params()],
+                tool_choice={"disable_parallel_tool_use": True, "type": "auto"},
                 betas=["computer-use-2024-10-22"],
             )
-            assistant_message = response.content[0].text
 
-    messages.append({"role": "assistant", "content": assistant_message})
-    print("Claude:", assistant_message)
+            handle_response(follow_up, messages, computer_tool)
 
-print("Goodbye!")
+
+def main():
+    # Connect to the computer and start the debug viewer
+    computer = Computer("http://localhost:17014")
+    computer.start_debug_viewer()
+
+    # Initialize tool
+    computer_tool = ComputerTool(computer)
+    messages = []
+
+    print("Chat with Claude (type 'quit' to exit)")
+    print("-" * 40)
+
+    while True:
+        user_input = input("You: ").strip()
+
+        if user_input.lower() == "quit":
+            break
+
+        messages.append({"role": "user", "content": user_input})
+
+        # Call Claude with computer use beta flag
+        response = client.beta.messages.create(
+            model="claude-3-5-sonnet-latest",
+            messages=messages,
+            system=SYSTEM_PROMPT,
+            max_tokens=1024,
+            tools=[computer_tool.to_params()],
+            tool_choice={"disable_parallel_tool_use": True, "type": "auto"},
+            betas=["computer-use-2024-10-22"],
+        )
+
+        handle_response(response, messages, computer_tool)
+
+    print("Goodbye!")
+
+
+if __name__ == "__main__":
+    main()

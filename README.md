@@ -11,7 +11,7 @@ pip install cuse
 ## Quick Start
 
 ```python
-from computeruse import Computer
+from cuse import Computer
 
 # Initialize a computer connection
 computer = Computer("http://localhost:17014")

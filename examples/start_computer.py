@@ -1,6 +1,6 @@
 import subprocess
 import sys
-from computeruse import Computer
+from cuse import Computer
 import time
 
 DOCKER_IMAGE = "ghcr.io/ercbot/computeruse-chromium-demo:latest"

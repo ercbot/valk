@@ -50,14 +50,15 @@ class Computer:
             )
         return SystemInfo.from_dict(response.json())
 
-    def screenshot(self) -> bytes:
-        """Take a screenshot of the remote screen"""
+    def screenshot(self) -> str:
+        """Take a screenshot of the remote screen, returning a base64 encoded image"""
         response = self._client.get("/v1/actions/screenshot")
         if response.status_code != 200:
             raise APIError(
                 f"Failed to take screenshot: {response.status_code} - {response.text}"
             )
-        return response.content
+
+        return response.json()["data"]["image"]
 
     def get_cursor_position(self) -> Tuple[int, int]:
         """Get the current cursor position
@@ -170,6 +171,10 @@ class Computer:
                 # Add CORS headers
                 self.send_header("Access-Control-Allow-Origin", "*")
                 super().end_headers()
+
+            def log_message(self, format, *args):
+                # Override to suppress logging
+                pass
 
         httpd = http.server.HTTPServer(("localhost", port), Handler)
 

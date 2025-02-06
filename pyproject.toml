@@ -10,7 +10,7 @@ dependencies = [
 license = "MIT"
 
 [tool.hatch.build.targets.wheel]
-packages = ["computeruse"]
+packages = ["cuse"]
 
 [build-system]
 requires = ["hatchling"]
@@ -19,6 +19,9 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "ruff>=0.9.4",
+]
+examples = [
+    "anthropic>=0.45.2",
 ]
 
 [project.urls]
