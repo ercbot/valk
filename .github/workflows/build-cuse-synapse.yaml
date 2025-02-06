@@ -1,22 +1,22 @@
-name: Build Subspaced Binary
+name: Build Cuse Synapse
 on:
   push:
     branches: [ "main" ]
     paths:
-      - 'cused/**'
-      - '.github/workflows/build-cused-binary.yaml'
-
+      - 'cuse-synapse/**'
+      - '.github/workflows/build-cuse-synapse.yaml'
     tags: [ 'v*.*.*' ]
   pull_request:
     branches: [ "main" ]
     paths:
-      - 'cused/**'
-      - '.github/workflows/build-cused-binary.yaml'
+      - 'cuse-synapse/**'
+      - '.github/workflows/build-cuse-synapse.yaml'
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
-  CUSED_DIR: cused
+  CUSE_SYNAPSE_DIR: cuse-synapse
+
 
 jobs:
   build-linux:
@@ -31,12 +31,12 @@ jobs:
 
       # Check code formatting
       - name: Check code format
-        working-directory: ${{ env.CUSED_DIR }}
+        working-directory: ${{ env.CUSE_SYNAPSE_DIR }}
         run: cargo fmt -- --check
-
 
       # Install system dependencies
       - name: Install dependencies
+
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -49,13 +49,14 @@ jobs:
             libxdo-dev
 
       # Build and test directly with cargo
-      - name: Build binary
-        working-directory: ${{ env.CUSED_DIR }}
+      - name: Build binary  
+        working-directory: ${{ env.CUSE_SYNAPSE_DIR }}
         run: cargo build --release
 
 
+
       - name: Run tests
-        working-directory: ${{ env.CUSED_DIR }}
+        working-directory: ${{ env.CUSE_SYNAPSE_DIR }}
         run: cargo test --release
 
 
@@ -63,13 +64,13 @@ jobs:
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: cused-linux-x86_64
-          path: ${{ env.CUSED_DIR }}/target/release/cused
+          name: cuse-synapse-linux-x86_64
+          path: ${{ env.CUSE_SYNAPSE_DIR }}/target/release/cuse-synapse
 
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: ${{ env.CUSED_DIR }}/target/release/cused
+          files: ${{ env.CUSE_SYNAPSE_DIR }}/target/release/cuse-synapse
           generate_release_notes: true

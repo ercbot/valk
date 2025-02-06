@@ -1,6 +1,6 @@
-# Computeruse Daemon
+# Cuse Synapse
 
-The computeruse daemon (`cused`) is a core component that enables AI agents to interact with computers. This service provides a REST API for computer control, handling input events and screen capture.
+The cuse synapse is a core component that enables AI agents to interact with computers. This service provides a REST API for computer control, handling input events and screen capture.
 
 ## Overview
 

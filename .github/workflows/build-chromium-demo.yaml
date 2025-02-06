@@ -3,7 +3,7 @@ name: Build Demo Docker Image
 on:
   # Run when the Rust build completes successfully
   workflow_run:
-    workflows: ["Build Cused Binary"]
+    workflows: ["Build Cuse Synapse"]
     types:
       - completed
 
