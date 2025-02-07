@@ -14,7 +14,7 @@ pip install valk
 from valk import Computer
 
 # Initialize a computer connection
-computer = Computer("http://localhost:17014")
+computer = Computer("http://localhost:8255")
 
 # Take a screenshot
 screenshot = computer.screenshot()

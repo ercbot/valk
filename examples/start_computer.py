@@ -44,7 +44,7 @@ def start_container():
             CONTAINER_NAME,
             "-d",
             "-p",
-            "17014:17014",
+            "8255:8255",
             "-p",
             "5900:5900",
             DOCKER_IMAGE,
@@ -62,7 +62,7 @@ def start_container():
 def main():
     start_container()
 
-    computer = Computer("http://localhost:17014")
+    computer = Computer("http://localhost:8255")
 
     print(computer.system_info)
 

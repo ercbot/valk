@@ -3,7 +3,7 @@ use std::env;
 
 // Defaults
 const DEFAULT_HOST: &str = "0.0.0.0"; // Default behavior is to listen on all interfaces, since this is expected to be accessed remotely
-const DEFAULT_PORT: u16 = 17014;
+const DEFAULT_PORT: u16 = 8255;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {

@@ -69,7 +69,7 @@ def handle_response(response, messages, computer_tool):
 
 def main():
     # Connect to the computer and start the debug viewer
-    computer = Computer("http://localhost:17014")
+    computer = Computer("http://localhost:8255")
     computer.start_debug_viewer()
 
     # Initialize tool

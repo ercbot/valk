@@ -19,7 +19,7 @@ We provide a Docker-based demo environment for quick testing and development:
 docker pull ghcr.io/ercbot/valk-chromium-demo:latest
 
 # Run the demo environment
-docker run-p 17014:17014 -p 5900:5900 ghcr.io/ercbot/valk-chromium-demo:latest
+docker run-p 8255:8255 -p 5900:5900 ghcr.io/ercbot/valk-chromium-demo:latest
 ```
 
 The demo environment includes:
@@ -130,7 +130,7 @@ RUST_LOG=debug cargo run
 ### Environment Variables
 
 - `VALK_HOST` - The hostname or IP address where the valk server will listen for incoming connections. Defaults to `0.0.0.0`, which allows access from any network interface.
-- `VALK_PORT` - The port number on which the valk server will accept connections. Defaults to `17014`. This can be overridden to run the service on a different port.
+- `VALK_PORT` - The port number on which the valk server will accept connections. Defaults to `8255`. This can be overridden to run the service on a different port.
 
 ### Timeouts
 
