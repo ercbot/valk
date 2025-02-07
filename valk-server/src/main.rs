@@ -22,9 +22,6 @@ use action_queue::{create_action_queue, Action, ActionError, ActionQueue, Action
 use config::Config;
 use monitor::monitor_websocket;
 
-use os_info;
-use xcap;
-
 async fn root() -> &'static str {
     "Subspace is running"
 }
@@ -58,8 +55,8 @@ async fn system_info() -> Result<Json<ComputerInfo>, (StatusCode, String)> {
     Ok(Json(ComputerInfo {
         os_type: os_info.os_type().to_string(),
         os_version: os_info.version().to_string(),
-        display_width: monitor.width() as u32,
-        display_height: monitor.height() as u32,
+        display_width: monitor.width(),
+        display_height: monitor.height(),
     }))
 }
 

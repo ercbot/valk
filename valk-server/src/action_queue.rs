@@ -94,12 +94,16 @@ pub async fn create_action_queue() -> Arc<ActionQueue> {
     queue
 }
 
+// Define type aliases for the complex parts
+type ActionSender = oneshot::Sender<Result<ActionResult, ActionError>>;
+type QueueItem = (Action, ActionSender);
+
 /// The GenericActionQueue for testing
 /// Can be used to test with a mock input driver
 /// Or a real input driver as ActionQueue
 #[derive(Clone)]
 pub struct GenericActionQueue<T: Mouse + Keyboard + Send + 'static> {
-    queue: Arc<Mutex<Vec<(Action, oneshot::Sender<Result<ActionResult, ActionError>>)>>>,
+    queue: Arc<Mutex<Vec<QueueItem>>>,
     input_driver: Arc<Mutex<T>>,
     monitor_tx: broadcast::Sender<MonitorEvent>,
 }
@@ -148,8 +152,9 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
             Ok(result) => {
                 result
                     .map_err(|e| ActionError::ChannelError(e.to_string())) // Channel errors
-                    .and_then(|r| Ok(r?))
+                    .and_then(|r| r)
             }
+
             Err(_) => {
                 // Timeout occurred - remove action from queue if it's still there
                 let mut queue = self.queue.lock().await;
@@ -225,14 +230,14 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                         }
                         Action::DoubleClick => {
                             // First click
-                            let first_click = match (
-                                input_driver.button(Button::Left, Press),
-                                sleep(DOUBLE_CLICK_DELAY).await,
-                                input_driver.button(Button::Left, Release),
-                            ) {
-                                (Ok(_), _, Ok(_)) => true,
-                                _ => false,
-                            };
+                            let first_click = matches!(
+                                (
+                                    input_driver.button(Button::Left, Press),
+                                    sleep(DOUBLE_CLICK_DELAY).await,
+                                    input_driver.button(Button::Left, Release),
+                                ),
+                                (Ok(_), _, Ok(_))
+                            );
 
                             sleep(DOUBLE_CLICK_DELAY).await;
 
@@ -320,11 +325,11 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                             }
                         }
                         Action::TypeText { text } => input_driver
-                            .text(&text)
+                            .text(text)
                             .map(|_| ActionResult { data: None })
                             .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
                         Action::KeyPress { key } => {
-                            if let Ok(key_press) = KeyPress::from_str(&key) {
+                            if let Ok(key_press) = KeyPress::from_str(key) {
                                 let result: Result<(), ActionError> = async {
                                     // Press modifiers
                                     for modifier in &key_press.modifiers {

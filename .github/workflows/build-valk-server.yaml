@@ -12,6 +12,7 @@ on:
 
 env:
   VALK_SERVER_DIR: valk-server
+  RUST_BACKTRACE: 1
 
 jobs:
   build:
