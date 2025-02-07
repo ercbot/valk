@@ -53,6 +53,6 @@ VNC_PID=$!
 log "VNC server started with PID: $VNC_PID"
 
 # Run the application with backtrace enabled
-log "Starting subspaced application..."
-RUST_BACKTRACE=1 ./subspaced
-log "subspaced application exited"
+log "Starting valk-server application..."
+RUST_BACKTRACE=1 ./valk-server
+log "valk-server application exited"

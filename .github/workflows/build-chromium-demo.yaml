@@ -29,20 +29,22 @@ jobs:
         uses: actions/checkout@v4
 
       # Download the binary from the previous workflow
-      - name: Download binary
-        uses: actions/download-artifact@v2
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
         with:
           name: valk-server-linux-x86_64
-          path: examples/chromium-demo/valk-server
+          path: valk-server/docker-examples/chromium-demo/valk-server
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Check binary exists
+      # Ensure binary is executable
+      - name: Make binary executable
         run: |
-          if [ -f examples/chromium-demo/valk-server/valk-server ]; then
-            chmod +x examples/chromium-demo/valk-server/valk-server
+          if [ -f valk-server/docker-examples/chromium-demo/valk-server/valk-server ]; then
+            chmod +x valk-server/docker-examples/chromium-demo/valk-server/valk-server
           else
             echo "Warning: Binary not found, Docker build may fail"
+
           fi
 
       - name: Log in to the Container registry
@@ -70,7 +72,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: examples/chromium-demo
+          context: valk-server/docker-examples/chromium-demo
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

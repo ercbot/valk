@@ -65,7 +65,7 @@ COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
 # Copy the binary from the artifact created by the build-subspaced-binary workflow
-COPY subspaced/subspaced .
-RUN chmod +x subspaced
+COPY valk-server/valk-server .
+RUN chmod +x valk-server
 
 ENTRYPOINT ["./entrypoint.sh"]
