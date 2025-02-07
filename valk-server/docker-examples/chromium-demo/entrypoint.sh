@@ -54,5 +54,5 @@ log "VNC server started with PID: $VNC_PID"
 
 # Run the application with backtrace enabled
 log "Starting valk-server application..."
-RUST_BACKTRACE=1 ./valk-server
+RUST_BACKTRACE=1 /usr/local/bin/valk-server
 log "valk-server application exited"

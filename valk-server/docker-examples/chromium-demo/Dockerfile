@@ -64,8 +64,13 @@ WORKDIR /app
 COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
-# Copy the binary from the artifact created by the build-subspaced-binary workflow
-COPY valk-server/valk-server .
-RUN chmod +x valk-server
+# Accept build arg with a default that works for GitHub Actions
+ARG BINARY_PATH=valk-server/valk-server
+
+# Copy the binary from the artifact created by the build-valk-server workflow
+COPY $BINARY_PATH /usr/local/bin/valk-server
+RUN chmod +x /usr/local/bin/valk-server
+
 
 ENTRYPOINT ["./entrypoint.sh"]
+

@@ -23,7 +23,7 @@ use config::Config;
 use monitor::monitor_websocket;
 
 async fn root() -> &'static str {
-    "Subspace is running"
+    "Valk is running"
 }
 
 #[derive(Debug, Serialize)]
