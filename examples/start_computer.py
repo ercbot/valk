@@ -4,7 +4,7 @@ from valk import Computer
 import time
 
 DOCKER_IMAGE = "ghcr.io/ercbot/valk-chromium-demo:latest"
-CONTAINER_NAME = "chromium-demo"
+CONTAINER_NAME = "valk-chromium-demo"
 
 
 def run_command(command):

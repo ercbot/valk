@@ -16,7 +16,8 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Building on Ubuntu 20.04 allows support for systems with older GLIBC versions
+    runs-on: ubuntu-20.04 
     steps:
       - uses: actions/checkout@v4
       # Install Rust
