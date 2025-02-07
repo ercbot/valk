@@ -8,7 +8,12 @@
 .vscode
 
 .scripts
+.flat
 valk_viewer.html
 
 dist
 build
+
+
+valk-server/docker-examples/chromium-demo/valk-server
+valk-server/target
