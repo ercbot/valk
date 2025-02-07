@@ -25,10 +25,6 @@ jobs:
         run: cargo fmt --check
         working-directory: ${{ env.VALK_SERVER_DIR }}
 
-      - name: Run clippy
-        run: cargo clippy -- -D warnings
-        working-directory: ${{ env.VALK_SERVER_DIR }}
-
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -40,6 +36,11 @@ jobs:
             libxext-dev \
             libxtst-dev \
             libxdo-dev
+
+      # Clippy needs to be run after dependencies are installed
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+        working-directory: ${{ env.VALK_SERVER_DIR }}
 
       - name: Build
         run: cargo build --release
