@@ -1,13 +1,10 @@
 from dataclasses import dataclass
-from typing import Dict, Any, Tuple
+from typing import Any, Dict, Tuple
+
 import httpx
+
 from .debug_viewer import VIEWER_HTML
-
-
-class APIError(Exception):
-    """Custom exception for API-related errors"""
-
-    pass
+from .errors import ValkAPIError
 
 
 @dataclass
@@ -45,7 +42,7 @@ class Computer:
         """Get information about the remote system"""
         response = self._client.get("/v1/system/info")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to get system info: {response.status_code} - {response.text}"
             )
         return SystemInfo.from_dict(response.json())
@@ -54,30 +51,47 @@ class Computer:
         """Take a screenshot of the remote screen, returning a base64 encoded image"""
         response = self._client.get("/v1/actions/screenshot")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to take screenshot: {response.status_code} - {response.text}"
             )
 
         return response.json()["data"]["image"]
 
-    def get_cursor_position(self) -> Tuple[int, int]:
+    def cursor_position(self) -> Tuple[int, int]:
         """Get the current cursor position
         Returns:
             Tuple of (x, y) coordinates
         """
         response = self._client.get("/v1/actions/cursor_position")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to get cursor position: {response.status_code} - {response.text}"
             )
-        data = response.json()
+        data = response.json()["data"]
         return data["x"], data["y"]
 
     def move_mouse(self, x: int, y: int) -> "Computer":
-        """Move the mouse to specific coordinates"""
+        """Move the mouse to specific coordinates
+
+        Args:
+            x: X coordinate (must be between 0 and display width)
+            y: Y coordinate (must be between 0 and display height)
+
+        Raises:
+            ValueError: If coordinates are outside valid range
+        """
+        if not (0 <= x <= self.system_info.display_width):
+            raise ValueError(
+                f"X coordinate {x} outside valid range 0-{self.system_info.display_width}"
+            )
+        if not (0 <= y <= self.system_info.display_height):
+            raise ValueError(
+                f"Y coordinate {y} outside valid range 0-{self.system_info.display_height}"
+            )
+
         response = self._client.post("/v1/actions/mouse_move", json={"x": x, "y": y})
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to move mouse: {response.status_code} - {response.text}"
             )
         return self
@@ -86,7 +100,7 @@ class Computer:
         """Perform a left click at the current mouse position"""
         response = self._client.post("/v1/actions/left_click")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to left click: {response.status_code} - {response.text}"
             )
         return self
@@ -95,7 +109,7 @@ class Computer:
         """Perform a right click at the current mouse position"""
         response = self._client.post("/v1/actions/right_click")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to right click: {response.status_code} - {response.text}"
             )
         return self
@@ -104,7 +118,7 @@ class Computer:
         """Perform a middle click at the current mouse position"""
         response = self._client.post("/v1/actions/middle_click")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to middle click: {response.status_code} - {response.text}"
             )
         return self
@@ -113,7 +127,7 @@ class Computer:
         """Perform a double click at the current mouse position"""
         response = self._client.post("/v1/actions/double_click")
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to double click: {response.status_code} - {response.text}"
             )
         return self
@@ -124,14 +138,16 @@ class Computer:
             "/v1/actions/left_click_drag", json={"x": x, "y": y}
         )
         if response.status_code != 200:
-            raise APIError(f"Failed to drag: {response.status_code} - {response.text}")
+            raise ValkAPIError(
+                f"Failed to drag: {response.status_code} - {response.text}"
+            )
         return self
 
     def type(self, text: str) -> "Computer":
         """Type the specified text"""
         response = self._client.post("/v1/actions/type", json={"text": text})
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to type text: {response.status_code} - {response.text}"
             )
         return self
@@ -144,7 +160,7 @@ class Computer:
         """
         response = self._client.post("/v1/actions/key", json={"text": key})
         if response.status_code != 200:
-            raise APIError(
+            raise ValkAPIError(
                 f"Failed to press key: {response.status_code} - {response.text}"
             )
         return self
@@ -152,9 +168,9 @@ class Computer:
     def start_debug_viewer(self, port=8000):
         """Start a debug viewer for the computer"""
         import http.server
+        import threading
         import webbrowser
         from pathlib import Path
-        import threading
 
         # Write the HTML file
         file_name = "valk_viewer.html"
