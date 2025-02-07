@@ -2,7 +2,7 @@ VIEWER_HTML = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Cuse Debug Viewer</title>
+    <title>Valk Debug Viewer</title>
     <style>
         body {
             font-family: system-ui, sans-serif;
@@ -104,7 +104,7 @@ VIEWER_HTML = """
     </style>
 </head>
 <body>
-    <h1>Cuse Debug Viewer</h1>
+    <h1>Valk Debug Viewer</h1>
     <div id="status" class="disconnected">Disconnected</div>
     <button class="clear-btn" onclick="clearEvents()">Clear Events</button>
     <div id="events"></div>
@@ -121,7 +121,7 @@ VIEWER_HTML = """
         const modalImg = document.getElementById('modal-image');
 
         function connect() {
-            ws = new WebSocket('ws://CUSE_BASE_URL/ws/monitor');
+            ws = new WebSocket('ws://VALK_BASE_URL/ws/monitor');
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
                 statusDiv.className = 'connected';

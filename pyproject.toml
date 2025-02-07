@@ -1,5 +1,5 @@
 [project]
-name = "cuse"
+name = "valk"
 version = "0.0.1"
 description = "Remote control of a computer"
 readme = "README.md"
@@ -10,7 +10,7 @@ dependencies = [
 license = "MIT"
 
 [tool.hatch.build.targets.wheel]
-packages = ["cuse"]
+packages = ["valk"]
 
 [build-system]
 requires = ["hatchling"]
@@ -25,4 +25,4 @@ examples = [
 ]
 
 [project.urls]
-Repository = "https://github.com/ercbot/computeruse"
+Repository = "https://github.com/ercbot/valk"

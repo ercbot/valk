@@ -8,7 +8,7 @@
 .vscode
 
 .scripts
-cuse_viewer.html
+valk_viewer.html
 
 dist
 build

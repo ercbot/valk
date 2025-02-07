@@ -1,0 +1,59 @@
+name: Build Valk Server
+
+on:
+  push:
+    paths:
+      - 'valk-server/**'
+      - '.github/workflows/build-valk-server.yaml'
+  pull_request:
+    paths:
+      - 'valk-server/**'
+      - '.github/workflows/build-valk-server.yaml'
+
+env:
+  VALK_SERVER_DIR: valk-server
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release
+        working-directory: ${{ env.VALK_SERVER_DIR }}
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release
+        working-directory: ${{ env.VALK_SERVER_DIR }}
+
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: -- -D warnings
+        working-directory: ${{ env.VALK_SERVER_DIR }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v2
+        with:
+          name: valk-server-linux-x86_64
+          path: ${{ env.VALK_SERVER_DIR }}/target/release/valk-server
+
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: ${{ env.VALK_SERVER_DIR }}/target/release/valk-server

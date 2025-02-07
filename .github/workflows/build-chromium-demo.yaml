@@ -3,9 +3,10 @@ name: Build Demo Docker Image
 on:
   # Run when the Rust build completes successfully
   workflow_run:
-    workflows: ["Build Cuse Synapse"]
+    workflows: ["Build Valk Server"]
     types:
       - completed
+
 
 
 env:
@@ -28,23 +29,19 @@ jobs:
         uses: actions/checkout@v4
 
       # Download the binary from the previous workflow
-      - name: Download binary artifact
-        uses: actions/download-artifact@v4
+      - name: Download binary
+        uses: actions/download-artifact@v2
         with:
-          name: cused-linux-x86_64
-          path: examples/chromium-demo/cused
+          name: valk-server-linux-x86_64
+          path: examples/chromium-demo/valk-server
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.workflow_run.id }}
 
-
-      # Ensure binary is executable
-      - name: Make binary executable
+      - name: Check binary exists
         run: |
-          if [ -f examples/chromium-demo/cused/cused ]; then
-            chmod +x examples/chromium-demo/cused/cused
+          if [ -f examples/chromium-demo/valk-server/valk-server ]; then
+            chmod +x examples/chromium-demo/valk-server/valk-server
           else
-
-
             echo "Warning: Binary not found, Docker build may fail"
           fi
 

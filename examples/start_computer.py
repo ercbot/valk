@@ -1,9 +1,9 @@
 import subprocess
 import sys
-from cuse import Computer
+from valk import Computer
 import time
 
-DOCKER_IMAGE = "ghcr.io/ercbot/computeruse-chromium-demo:latest"
+DOCKER_IMAGE = "ghcr.io/ercbot/valk-chromium-demo:latest"
 CONTAINER_NAME = "chromium-demo"
 
 

@@ -26,11 +26,11 @@ impl Config {
         let mut config = Config::default();
 
         // Override with environment variables if they exist
-        if let Ok(host) = env::var("CUSE_HOST") {
+        if let Ok(host) = env::var("VALK_HOST") {
             config.host = host;
         }
 
-        if let Ok(port) = env::var("CUSE_PORT") {
+        if let Ok(port) = env::var("VALK_PORT") {
             config.port = port.parse().unwrap_or(config.port);
         }
 
@@ -53,15 +53,15 @@ mod tests {
 
     #[test]
     fn test_env_override() {
-        env::set_var("CUSE_PORT", "9090");
-        env::set_var("CUSE_HOST", "127.0.0.1");
+        env::set_var("VALK_PORT", "9090");
+        env::set_var("VALK_HOST", "127.0.0.1");
 
         let config = Config::new();
         assert_eq!(config.port, 9090);
         assert_eq!(config.host, "127.0.0.1");
 
         // Clean up
-        env::remove_var("CUSE_PORT");
-        env::remove_var("CUSE_HOST");
+        env::remove_var("VALK_PORT");
+        env::remove_var("VALK_HOST");
     }
 }

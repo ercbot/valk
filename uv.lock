@@ -52,7 +52,7 @@ wheels = [
 ]
 
 [[package]]
-name = "cuse"
+name = "valk"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [

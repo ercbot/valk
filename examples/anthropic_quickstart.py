@@ -1,7 +1,7 @@
 import os
 import anthropic
-from cuse.integrations.anthropic import ComputerTool
-from cuse import Computer
+from valk.integrations.anthropic import ComputerTool
+from valk import Computer
 
 # Get API key from env or prompt user
 api_key = os.getenv("ANTHROPIC_API_KEY")

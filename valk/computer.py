@@ -157,11 +157,11 @@ class Computer:
         import threading
 
         # Write the HTML file
-        file_name = "cuse_viewer.html"
+        file_name = "valk_viewer.html"
         viewer_path = Path(file_name)
         viewer_path.write_text(
             VIEWER_HTML.replace(
-                "CUSE_BASE_URL", str(self._client.base_url).lstrip("http://")
+                "VALK_BASE_URL", str(self._client.base_url).lstrip("http://")
             )
         )
 

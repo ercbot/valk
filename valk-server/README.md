@@ -1,10 +1,10 @@
-# Cuse Synapse
+# Valk Server
 
-The cuse synapse is a core component that enables AI agents to interact with computers. This service provides a REST API for computer control, handling input events and screen capture.
+The valk server is a core component that enables AI agents to interact with computers. This service provides a REST API for computer control, handling input events and screen capture.
 
 ## Overview
 
-cused runs as a background service that:
+valk-server runs as a background service that:
 - Provides low-level computer control (mouse, keyboard, screenshots)
 - Exposes a clean REST API for AI agent integration
 - Manages input event queuing and synchronization
@@ -16,10 +16,10 @@ We provide a Docker-based demo environment for quick testing and development:
 
 ```bash
 # Pukk the demo container
-docker pull ghcr.io/ercbot/cuse-chromium-demo:latest
+docker pull ghcr.io/ercbot/valk-chromium-demo:latest
 
 # Run the demo environment
-docker run-p 17014:17014 -p 5900:5900 ghcr.io/ercbot/cuse-chromium-demo:latest
+docker run-p 17014:17014 -p 5900:5900 ghcr.io/ercbot/valk-chromium-demo:latest
 ```
 
 The demo environment includes:
@@ -129,8 +129,8 @@ RUST_LOG=debug cargo run
 
 ### Environment Variables
 
-- `CUSE_HOST` - The hostname or IP address where the cuse daemon will listen for incoming connections. Defaults to `0.0.0.0`, which allows access from any network interface.
-- `CUSE_PORT` - The port number on which the cuse daemon will accept connections. Defaults to `17014`. This can be overridden to run the service on a different port.
+- `VALK_HOST` - The hostname or IP address where the valk server will listen for incoming connections. Defaults to `0.0.0.0`, which allows access from any network interface.
+- `VALK_PORT` - The port number on which the valk server will accept connections. Defaults to `17014`. This can be overridden to run the service on a different port.
 
 ### Timeouts
 

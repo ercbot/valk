@@ -370,24 +370,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cused"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64",
- "enigo",
- "image",
- "os_info",
- "serde",
- "serde_json",
- "tokio",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "xcap",
-]
-
-[[package]]
 name = "data-encoding"
 version = "2.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1804,6 +1786,24 @@ dependencies = [
  "aligned-vec",
  "num-traits",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "valk-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "enigo",
+ "image",
+ "os_info",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "xcap",
 ]
 
 [[package]]

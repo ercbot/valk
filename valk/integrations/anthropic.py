@@ -1,8 +1,6 @@
-from typing import TypedDict, Literal, Dict, Any, NamedTuple
+from typing import TypedDict, Literal, NamedTuple
 from enum import Enum
 from dataclasses import dataclass, fields, replace
-import json
-from anthropic.types.beta import BetaToolComputerUse20241022Param
 
 
 class Resolution(NamedTuple):
