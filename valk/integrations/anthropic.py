@@ -1,6 +1,6 @@
-from typing import TypedDict, Literal, NamedTuple
-from enum import Enum
 from dataclasses import dataclass, fields, replace
+from enum import Enum
+from typing import Literal, NamedTuple, TypedDict
 
 
 class Resolution(NamedTuple):
