@@ -17,6 +17,12 @@ mkdir -p /var/run/dbus
 dbus-daemon --system --fork
 log "D-Bus started"
 
+# Start IBus daemon
+log "Starting IBus daemon..."
+ibus-daemon -drx &
+IBUS_PID=$!
+log "IBus daemon started with PID: $IBUS_PID"
+
 # Start Xvfb
 log "Starting Xvfb..."
 Xvfb $DISPLAY -screen 0 1920x1080x24 &

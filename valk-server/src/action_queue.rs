@@ -2,6 +2,7 @@ use crate::key_press::KeyPress;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Json};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use enigo::InputError;
 use enigo::{
     Button,
     Coordinate::{Abs, Rel},
@@ -170,6 +171,256 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
         sleep(ACTION_DELAY).await;
     }
 
+    async fn handle_action(
+        input_driver: &mut T,
+        action: &Action,
+    ) -> Result<ActionResult, ActionError> {
+        match action {
+            Action::LeftClick => {
+                let press_result = input_driver.button(Button::Left, Press);
+                let release_result = if press_result.is_ok() {
+                    Self::action_delay().await;
+                    input_driver.button(Button::Left, Release)
+                } else {
+                    press_result
+                };
+
+                release_result
+                    .map(|_| ActionResult { data: None })
+                    .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
+            }
+            Action::RightClick => {
+                let press_result = input_driver.button(Button::Right, Press);
+                let release_result = if press_result.is_ok() {
+                    Self::action_delay().await;
+                    input_driver.button(Button::Right, Release)
+                } else {
+                    press_result
+                };
+
+                release_result
+                    .map(|_| ActionResult { data: None })
+                    .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
+            }
+            Action::MiddleClick => {
+                let press_result = input_driver.button(Button::Middle, Press);
+                let release_result = if press_result.is_ok() {
+                    Self::action_delay().await;
+                    input_driver.button(Button::Middle, Release)
+                } else {
+                    press_result
+                };
+
+                release_result
+                    .map(|_| ActionResult { data: None })
+                    .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
+            }
+            Action::DoubleClick => {
+                // First click
+                let first_click = matches!(
+                    (
+                        input_driver.button(Button::Left, Press),
+                        sleep(DOUBLE_CLICK_DELAY).await,
+                        input_driver.button(Button::Left, Release),
+                    ),
+                    (Ok(_), _, Ok(_))
+                );
+
+                sleep(DOUBLE_CLICK_DELAY).await;
+
+                if first_click {
+                    // Second click
+                    match (
+                        input_driver.button(Button::Left, Press),
+                        sleep(DOUBLE_CLICK_DELAY).await,
+                        input_driver.button(Button::Left, Release),
+                    ) {
+                        (Ok(_), _, Ok(_)) => Ok(ActionResult { data: None }),
+                        _ => Err(ActionError::ExecutionFailed(
+                            "Failed to execute second click".into(),
+                        )),
+                    }
+                } else {
+                    Err(ActionError::ExecutionFailed(
+                        "Failed to execute first click".into(),
+                    ))
+                }
+            }
+            Action::MouseMove { x, y } => input_driver
+                .move_mouse(*x as i32, *y as i32, Abs)
+                .map(|_| ActionResult { data: None })
+                .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
+            Action::LeftClickDrag { x, y } => {
+                // First press and hold the left button
+                if let Err(e) = input_driver.button(Button::Left, Press) {
+                    return Err(ActionError::ExecutionFailed(e.to_string()))
+                        as Result<ActionResult, ActionError>;
+                }
+
+                sleep(DOUBLE_CLICK_DELAY).await;
+
+                // We need to use interpolation to drag the mouse
+                let current_pos = input_driver.location().unwrap();
+                let target_pos = (*x as i32, *y as i32);
+
+                let distance = (((current_pos.0 - target_pos.0).pow(2)
+                    + (current_pos.1 - target_pos.1).pow(2))
+                    as f64)
+                    .sqrt();
+                let steps = (distance / 10.0).max(1.0); // One step for every 10 euclidan px traveled
+                let step_x = (target_pos.0 - current_pos.0) as f64 / steps;
+                let step_y = (target_pos.1 - current_pos.1) as f64 / steps;
+
+                // Do relative moves for all but last step
+                for i in 0..steps as u32 {
+                    if i == steps as u32 - 1 {
+                        // Last step - do absolute move to target
+                        match input_driver.move_mouse(target_pos.0, target_pos.1, Abs) {
+                            Ok(_) => (),
+                            Err(e) => {
+                                // Cleanup: release button if move fails
+                                let _ = input_driver.button(Button::Left, Release);
+                                return Err(ActionError::ExecutionFailed(e.to_string()));
+                            }
+                        };
+                    } else {
+                        // Regular relative move for intermediate steps
+                        match input_driver.move_mouse(step_x as i32, step_y as i32, Rel) {
+                            Ok(_) => (),
+                            Err(e) => {
+                                // Cleanup: release button if move fails
+                                let _ = input_driver.button(Button::Left, Release);
+                                return Err(ActionError::ExecutionFailed(e.to_string()));
+                            }
+                        };
+                        sleep(Duration::from_millis(10)).await;
+                    }
+                }
+
+                sleep(DOUBLE_CLICK_DELAY).await;
+
+                // Release button
+                match input_driver.button(Button::Left, Release) {
+                    Ok(_) => Ok(ActionResult { data: None }),
+                    Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
+                }
+            }
+            Action::TypeText { text } => {
+                // First check if text is empty
+                if text.is_empty() {
+                    return Err(ActionError::InvalidInput(
+                        "Text cannot be empty".to_string(),
+                    ));
+                }
+
+                // Attempt to type the text with detailed error handling
+                match input_driver.text(text) {
+                    Ok(_) => Ok(ActionResult { data: None }),
+                    Err(e) => {
+                        // Log the specific type of InputError
+                        match e {
+                            InputError::Simulate(msg) => {
+                                eprintln!("Simulation error: {}", msg);
+                                let non_ascii_chars: Vec<char> =
+                                    text.chars().filter(|c| !c.is_ascii()).collect();
+                                let has_non_ascii = !non_ascii_chars.is_empty();
+
+                                if has_non_ascii {
+                                    Err(ActionError::ExecutionFailed(format!(
+                                        "Input simulation failed. This might be because the text contains non-ASCII characters ({:?}) which may not be supported by your system. Original error: {}",
+                                        non_ascii_chars, msg
+                                    )))
+                                } else {
+                                    Err(ActionError::ExecutionFailed(format!(
+                                        "Input simulation failed: {}",
+                                        msg
+                                    )))
+                                }
+                            }
+                            _ => Err(ActionError::ExecutionFailed(e.to_string())),
+                        }
+                    }
+                }
+            }
+            Action::KeyPress { key } => {
+                if let Ok(key_press) = KeyPress::from_str(key) {
+                    let result: Result<(), ActionError> = async {
+                        // Press modifiers
+                        for modifier in &key_press.modifiers {
+                            input_driver
+                                .key(*modifier, Press)
+                                .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
+                            Self::action_delay().await;
+                        }
+
+                        // Press the main key
+                        input_driver
+                            .key(key_press.key, Press)
+                            .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
+                        Self::action_delay().await;
+
+                        // Release the main key
+                        input_driver
+                            .key(key_press.key, Release)
+                            .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
+                        Self::action_delay().await;
+
+                        // Release modifiers in reverse order
+                        for modifier in key_press.modifiers.iter().rev() {
+                            input_driver
+                                .key(*modifier, Release)
+                                .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
+                            Self::action_delay().await;
+                        }
+
+                        Ok(())
+                    }
+                    .await;
+                    result.map(|()| ActionResult { data: None })
+                } else {
+                    Err(ActionError::InvalidInput(format!(
+                        "Invalid key format or key not found: {}",
+                        key
+                    )))
+                }
+            }
+            Action::CursorPosition => match input_driver.location() {
+                Ok((x, y)) => Ok(ActionResult {
+                    data: Some(serde_json::json!({ "x": x, "y": y })),
+                }),
+                Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
+            },
+            Action::Screenshot => {
+                // Screenshot delay is slightly longer
+                sleep(SCREENSHOT_DELAY).await;
+
+                Monitor::all()
+                    .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
+                    .and_then(|monitors| {
+                        monitors.first().cloned().ok_or_else(|| {
+                            ActionError::ExecutionFailed("No monitor found".to_string())
+                        })
+                    })
+                    .and_then(|monitor| {
+                        monitor.capture_image().map_err(|_| {
+                            ActionError::ExecutionFailed("Failed to capture image".to_string())
+                        })
+                    })
+                    .and_then(|image| {
+                        let mut cursor = Cursor::new(Vec::new());
+                        image.write_to(&mut cursor, ImageFormat::Png).map_err(|_| {
+                            ActionError::ExecutionFailed("Failed to encode image".to_string())
+                        })?;
+                        let bytes = cursor.into_inner();
+                        let base64_image = BASE64.encode(bytes);
+                        Ok(ActionResult {
+                            data: Some(serde_json::json!({ "image": base64_image })),
+                        })
+                    })
+            }
+        }
+    }
+
     pub async fn start_processing(&self) {
         let queue_clone = self.queue.clone();
         let input_driver_clone = self.input_driver.clone();
@@ -186,232 +437,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                     let mut input_driver = input_driver_clone.lock().await;
                     Self::action_delay().await;
 
-                    let result = match &action {
-                        Action::LeftClick => {
-                            let press_result = input_driver.button(Button::Left, Press);
-                            let release_result = if press_result.is_ok() {
-                                Self::action_delay().await;
-                                input_driver.button(Button::Left, Release)
-                            } else {
-                                press_result
-                            };
-
-                            release_result
-                                .map(|_| ActionResult { data: None })
-                                .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
-                        }
-
-                        Action::RightClick => {
-                            let press_result = input_driver.button(Button::Right, Press);
-                            let release_result = if press_result.is_ok() {
-                                Self::action_delay().await;
-                                input_driver.button(Button::Right, Release)
-                            } else {
-                                press_result
-                            };
-
-                            release_result
-                                .map(|_| ActionResult { data: None })
-                                .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
-                        }
-
-                        Action::MiddleClick => {
-                            let press_result = input_driver.button(Button::Middle, Press);
-                            let release_result = if press_result.is_ok() {
-                                Self::action_delay().await;
-                                input_driver.button(Button::Middle, Release)
-                            } else {
-                                press_result
-                            };
-
-                            release_result
-                                .map(|_| ActionResult { data: None })
-                                .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
-                        }
-                        Action::DoubleClick => {
-                            // First click
-                            let first_click = matches!(
-                                (
-                                    input_driver.button(Button::Left, Press),
-                                    sleep(DOUBLE_CLICK_DELAY).await,
-                                    input_driver.button(Button::Left, Release),
-                                ),
-                                (Ok(_), _, Ok(_))
-                            );
-
-                            sleep(DOUBLE_CLICK_DELAY).await;
-
-                            if first_click {
-                                // Second click
-                                match (
-                                    input_driver.button(Button::Left, Press),
-                                    sleep(DOUBLE_CLICK_DELAY).await,
-                                    input_driver.button(Button::Left, Release),
-                                ) {
-                                    (Ok(_), _, Ok(_)) => Ok(ActionResult { data: None }),
-                                    _ => Err(ActionError::ExecutionFailed(
-                                        "Failed to execute second click".into(),
-                                    )),
-                                }
-                            } else {
-                                Err(ActionError::ExecutionFailed(
-                                    "Failed to execute first click".into(),
-                                ))
-                            }
-                        }
-
-                        Action::MouseMove { x, y } => input_driver
-                            .move_mouse(*x as i32, *y as i32, Abs)
-                            .map(|_| ActionResult { data: None })
-                            .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
-                        Action::LeftClickDrag { x, y } => {
-                            // First press and hold the left button
-                            if let Err(e) = input_driver.button(Button::Left, Press) {
-                                return Err(ActionError::ExecutionFailed(e.to_string()))
-                                    as Result<ActionResult, ActionError>;
-                            }
-
-                            sleep(DOUBLE_CLICK_DELAY).await;
-
-                            // We need to use interpolation to drag the mouse
-                            let current_pos = input_driver.location().unwrap();
-                            let target_pos = (*x as i32, *y as i32);
-
-                            let distance = (((current_pos.0 - target_pos.0).pow(2)
-                                + (current_pos.1 - target_pos.1).pow(2))
-                                as f64)
-                                .sqrt();
-                            let steps = (distance / 10.0).max(1.0); // One step for every 10 euclidan px traveled
-                            let step_x = (target_pos.0 - current_pos.0) as f64 / steps;
-                            let step_y = (target_pos.1 - current_pos.1) as f64 / steps;
-
-                            // Do relative moves for all but last step
-                            for i in 0..steps as u32 {
-                                if i == steps as u32 - 1 {
-                                    // Last step - do absolute move to target
-                                    match input_driver.move_mouse(target_pos.0, target_pos.1, Abs) {
-                                        Ok(_) => (),
-                                        Err(e) => {
-                                            // Cleanup: release button if move fails
-                                            let _ = input_driver.button(Button::Left, Release);
-                                            return Err(ActionError::ExecutionFailed(
-                                                e.to_string(),
-                                            ));
-                                        }
-                                    };
-                                } else {
-                                    // Regular relative move for intermediate steps
-                                    match input_driver.move_mouse(step_x as i32, step_y as i32, Rel)
-                                    {
-                                        Ok(_) => (),
-                                        Err(e) => {
-                                            // Cleanup: release button if move fails
-                                            let _ = input_driver.button(Button::Left, Release);
-                                            return Err(ActionError::ExecutionFailed(
-                                                e.to_string(),
-                                            ));
-                                        }
-                                    };
-                                    sleep(Duration::from_millis(10)).await;
-                                }
-                            }
-
-                            sleep(DOUBLE_CLICK_DELAY).await;
-
-                            // Release button
-                            match input_driver.button(Button::Left, Release) {
-                                Ok(_) => Ok(ActionResult { data: None }),
-                                Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
-                            }
-                        }
-                        Action::TypeText { text } => input_driver
-                            .text(text)
-                            .map(|_| ActionResult { data: None })
-                            .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
-                        Action::KeyPress { key } => {
-                            if let Ok(key_press) = KeyPress::from_str(key) {
-                                let result: Result<(), ActionError> = async {
-                                    // Press modifiers
-                                    for modifier in &key_press.modifiers {
-                                        input_driver.key(*modifier, Press).map_err(|e| {
-                                            ActionError::ExecutionFailed(e.to_string())
-                                        })?;
-                                        Self::action_delay().await;
-                                    }
-
-                                    // Press the main key
-                                    input_driver
-                                        .key(key_press.key, Press)
-                                        .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
-                                    Self::action_delay().await;
-
-                                    // Release the main key
-                                    input_driver
-                                        .key(key_press.key, Release)
-                                        .map_err(|e| ActionError::ExecutionFailed(e.to_string()))?;
-                                    Self::action_delay().await;
-
-                                    // Release modifiers in reverse order
-                                    for modifier in key_press.modifiers.iter().rev() {
-                                        input_driver.key(*modifier, Release).map_err(|e| {
-                                            ActionError::ExecutionFailed(e.to_string())
-                                        })?;
-                                        Self::action_delay().await;
-                                    }
-
-                                    Ok(())
-                                }
-                                .await;
-                                result.map(|()| ActionResult { data: None })
-                            } else {
-                                Err(ActionError::InvalidInput("Invalid key format".into()))
-                            }
-                        }
-                        Action::CursorPosition => match input_driver.location() {
-                            Ok((x, y)) => Ok(ActionResult {
-                                data: Some(serde_json::json!({ "x": x, "y": y })),
-                            }),
-                            Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
-                        },
-                        Action::Screenshot => {
-                            // Screenshot delay is slightly longer
-                            sleep(SCREENSHOT_DELAY).await;
-
-                            Monitor::all()
-                                .map_err(|_| {
-                                    ActionError::ExecutionFailed(
-                                        "Failed to get monitors".to_string(),
-                                    )
-                                })
-                                .and_then(|monitors| {
-                                    monitors.first().cloned().ok_or_else(|| {
-                                        ActionError::ExecutionFailed("No monitor found".to_string())
-                                    })
-                                })
-                                .and_then(|monitor| {
-                                    monitor.capture_image().map_err(|_| {
-                                        ActionError::ExecutionFailed(
-                                            "Failed to capture image".to_string(),
-                                        )
-                                    })
-                                })
-                                .and_then(|image| {
-                                    let mut cursor = Cursor::new(Vec::new());
-                                    image.write_to(&mut cursor, ImageFormat::Png).map_err(
-                                        |_| {
-                                            ActionError::ExecutionFailed(
-                                                "Failed to encode image".to_string(),
-                                            )
-                                        },
-                                    )?;
-                                    let bytes = cursor.into_inner();
-                                    let base64_image = BASE64.encode(bytes);
-                                    Ok(ActionResult {
-                                        data: Some(serde_json::json!({ "image": base64_image })),
-                                    })
-                                })
-                        }
-                    };
+                    let result = Self::handle_action(&mut input_driver, &action).await;
 
                     // Send monitor event
                     let monitor_event = MonitorEvent {
@@ -540,17 +566,87 @@ mod tests {
     #[tokio::test]
     async fn test_type_text() {
         let queue = create_test_action_queue().await;
-        let test_text = "Hello, World!";
+
+        let test_texts = ["Hello, World!", "1234567890", "Special chars: !@#$%^&*()"];
+
+        for text in test_texts {
+            let result = queue
+                .execute_action(Action::TypeText {
+                    text: text.to_string(),
+                })
+                .await;
+
+            match &result {
+                Ok(_) => {
+                    let enigo = queue.input_driver.lock().await;
+                    assert_eq!(
+                        enigo.last_action,
+                        format!("text_{}", text),
+                        "Failed to verify text input for: {}",
+                        text
+                    );
+                }
+                Err(e) => {
+                    panic!("Failed to type text '{}': {:?}", text, e);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_type_unicode() {
+        let queue = create_test_action_queue().await;
+
+        let test_texts = [
+            "Unicode: ñáéíóú",
+            "Emojis: 😊🚀🌟",
+            "Cyrillic: Привет, мир!",
+            "Japanese: こんにちは世界",
+            "Korean: 안녕하세요 세계",
+            "Arabic: مرحبا بالعالم",
+            "Hebrew: שלום עולם",
+            "Greek: Γειά σου κόσμε",
+            "Turkish: Merhaba dünya",
+            "Vietnamese: Chào thế giới",
+            "Thai: สวัสดีโลก",
+            "Russian: Привет, мир!",
+            "Chinese: 你好，世界",
+        ];
+
+        for text in test_texts {
+            let result = queue
+                .execute_action(Action::TypeText {
+                    text: text.to_string(),
+                })
+                .await;
+
+            match &result {
+                Ok(_) => {
+                    let enigo = queue.input_driver.lock().await;
+                    assert_eq!(
+                        enigo.last_action,
+                        format!("text_{}", text),
+                        "Failed to verify text input for: {}",
+                        text
+                    );
+                }
+                Err(e) => {
+                    panic!("Failed to type text '{}': {:?}", text, e);
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_type_text_empty() {
+        let queue = create_test_action_queue().await;
 
         let result = queue
             .execute_action(Action::TypeText {
-                text: test_text.to_string(),
+                text: "".to_string(),
             })
             .await;
-        assert!(result.is_ok());
-
-        let enigo = queue.input_driver.lock().await;
-        assert_eq!(enigo.last_action, format!("text_{}", test_text));
+        assert!(result.is_err());
     }
 
     #[tokio::test]
