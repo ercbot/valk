@@ -1,16 +1,17 @@
-import subprocess
 import argparse
 import os
 import shutil
+import subprocess
 
 DEMO_CONTAINER_NAME = "valk-demo"
-DEMO_IMAGE_NAME = "valk-chromium-demo"
+IMAGE_NAME = "ghcr.io/ercbot/valk-chromium-demo:latest"
 DOCKER_DIR = "docker-examples/chromium-demo"
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--rebuild-cross", action="store_true")
+    parser.add_argument("-b", "--build-only", action="store_true")
     args = parser.parse_args()
 
     if args.rebuild_cross:
@@ -38,8 +39,19 @@ def main():
             "build",
             "--target",
             "x86_64-unknown-linux-gnu",
-            "--image",
-            "valk-cross-compiler",
+        ],
+        check=True,
+    )
+
+    # Run the tests
+    subprocess.run(
+        [
+            "cross",
+            "test",
+            "--target",
+            "x86_64-unknown-linux-gnu",
+            "--bin",
+            "valk-server",
         ],
         check=True,
     )
@@ -59,17 +71,21 @@ def main():
             "docker",
             "build",
             "-t",
-            DEMO_IMAGE_NAME,
+            IMAGE_NAME,
             ".",
         ],
         check=True,
     )
+
+    if args.build_only:
+        return
 
     # Stop the dev container if it exists
     subprocess.run(
         ["docker", "stop", DEMO_CONTAINER_NAME],
         check=True,
     )
+
     # Remove the dev container if it exists
     subprocess.run(
         ["docker", "rm", DEMO_CONTAINER_NAME],
@@ -89,7 +105,7 @@ def main():
             "8255:8255",  # Valk server port
             "--name",
             DEMO_CONTAINER_NAME,
-            DEMO_IMAGE_NAME,
+            IMAGE_NAME,
         ],
         check=True,
     )
