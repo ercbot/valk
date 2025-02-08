@@ -17,3 +17,5 @@ build
 
 valk-server/docker-examples/chromium-demo/valk-server
 valk-server/target
+
+tests/test_logs
