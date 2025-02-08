@@ -44,6 +44,7 @@ impl FromStr for KeyPress {
 fn parse_single_key(key: &str) -> Result<Key, String> {
     match key.to_lowercase().as_str() {
         // Special keys
+        "esc" | "escape" => Ok(Key::Escape),
         "return" | "enter" => Ok(Key::Return),
         "tab" => Ok(Key::Tab),
         "space" => Ok(Key::Space),
@@ -52,6 +53,16 @@ fn parse_single_key(key: &str) -> Result<Key, String> {
         "down" => Ok(Key::DownArrow),
         "left" => Ok(Key::LeftArrow),
         "right" => Ok(Key::RightArrow),
+        "delete" => Ok(Key::Delete),
+        "insert" => Ok(Key::Insert),
+        "home" => Ok(Key::Home),
+        "end" => Ok(Key::End),
+        "pageup" => Ok(Key::PageUp),
+        "pagedown" => Ok(Key::PageDown),
+        "printscreen" => Ok(Key::PrintScr),
+        "pause" => Ok(Key::Pause),
+        "numlock" => Ok(Key::Numlock),
+        "capslock" => Ok(Key::CapsLock),
 
         // Modifiers
         "ctrl" | "control" => Ok(Key::Control),
