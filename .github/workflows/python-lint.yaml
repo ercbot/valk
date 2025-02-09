@@ -1,0 +1,69 @@
+name: Python Lint
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release Tag
+        required: true
+        default: dry-run
+        type: string
+  push:
+
+
+    branches: [ "main" ]
+    paths:
+      - 'valk/**'
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - '.github/workflows/test-python.yaml'
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - 'valk/**'
+      - 'uv.lock'
+      - 'pyproject.toml'
+      - '.github/workflows/test-python.yaml'
+
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Check formatting with Ruff
+        run: uvx ruff format --check .
+      - name: Run Ruff linting
+        run: uvx ruff check .
+
+  # Make sure the version in pyproject.toml matches the tag
+  check-pyproject-version:
+    if: inputs.tag != 'dry-run'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install the latest version of uv and set the python version
+        uses: astral-sh/setup-uv@v5
+
+      - name: Check version matches tag (pyproject.toml)
+        run: |
+          # Install toml parser
+          uv pip install tomli
+          # Python script to check version
+          python -c '
+
+          import tomli
+          import sys
+          with open("pyproject.toml", "rb") as f:
+              data = tomli.load(f)
+          version = data["project"]["version"]
+          tag = "${{ inputs.tag }}"
+          if tag.startswith("v"):  # Remove v prefix if present
+              tag = tag[1:]
+          if version != tag:
+              print(f"Version mismatch: pyproject.toml has {version} but tag is {tag}")
+              sys.exit(1)
+          '

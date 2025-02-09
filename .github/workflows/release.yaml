@@ -36,40 +36,27 @@ jobs:
     with:
       tag: ${{ inputs.tag }}
       
-  # This will run after docker build - (python integration tests require updated docker image)
-  trigger-python-tests:
-    needs: trigger-docker-build
-    uses: ./.github/workflows/test-python.yaml
+  python-lint:
+    needs: trigger-server-build
+    uses: ./.github/workflows/python-lint.yaml
     secrets: inherit
+
+  # This will run after docker build - (python integration tests require updated docker image)
+  integration-tests:
+    needs: [trigger-server-build, python-lint]
+    uses: ./.github/workflows/python-integration-tests.yaml
+    secrets: inherit
+
 
   # Final publish job that creates the release
   publish:
-    needs: [trigger-server-build, trigger-docker-build, trigger-python-tests]
+    needs: [trigger-server-build, trigger-docker-build, integration-tests]
     runs-on: ubuntu-latest
+    environment: release
     if: inputs.tag != 'dry-run'
     steps:
         - name: Install the latest version of uv and set the python version
           uses: astral-sh/setup-uv@v5
-
-        - name: Check version matches tag
-          run: |
-            # Install toml parser
-            uv pip install tomli
-            # Python script to check version
-            python -c '
-
-            import tomli
-            import sys
-            with open("pyproject.toml", "rb") as f:
-                data = tomli.load(f)
-            version = data["project"]["version"]
-            tag = "${{ inputs.tag }}"
-            if tag.startswith("v"):  # Remove v prefix if present
-                tag = tag[1:]
-            if version != tag:
-                print(f"Version mismatch: pyproject.toml has {version} but tag is {tag}")
-                sys.exit(1)
-            '
 
         - uses: actions/checkout@v4
         - name: Build wheel
@@ -92,3 +79,11 @@ jobs:
           with:
             tag_name: ${{ inputs.tag }}
             files: artifacts/**/*
+
+        - name: Publish package distributions to PyPI
+          uses: pypa/gh-action-pypi-publish@release/v1
+
+        - name: Create a tag in the Valk repo
+          uses: actions/create-tag@v1
+          with:
+            tag_name: ${{ inputs.tag }}
