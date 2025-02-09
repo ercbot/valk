@@ -9,6 +9,13 @@ on:
           default: dry-run
           type: string
 
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+
 jobs:
   # This will trigger the existing valk-server build but ensure we wait for it
   trigger-server-build:
@@ -23,6 +30,9 @@ jobs:
     needs: trigger-server-build
     uses: ./.github/workflows/build-chromium-demo.yaml
     secrets: inherit
+    permissions:
+      packages: write  # For pushing to container registry
+      actions: read    # For downloading artifacts
     with:
       tag: ${{ inputs.tag }}
 
