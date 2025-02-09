@@ -1,6 +1,7 @@
 name: Test Python
 
 on:
+  workflow_call:
   push:
     branches: [ "main" ]
     paths:
@@ -34,7 +35,6 @@ jobs:
       - name: Test with python ${{ matrix.python-version }}
         run: uv run --frozen pytest -v
   lint:
-
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -1,11 +1,13 @@
 name: Build Demo Docker Image
 
 on:
-  # Run when the Rust build completes successfully
-  workflow_run:
-    workflows: ["Build Valk Server"]
-    types:
-      - completed
+  workflow_call:
+    inputs:
+      tag:
+        description: Release Tag
+        required: true
+        default: dry-run
+        type: string
 
 
 
@@ -20,9 +22,8 @@ permissions:
 
 jobs:
   build-and-push:
-    # Only run if the triggering workflow succeeded or this was manually triggered
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+
 
     steps:
       - name: Checkout repository

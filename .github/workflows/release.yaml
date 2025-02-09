@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+        tag:
+          description: Release Tag
+          required: true
+          default: dry-run
+          type: string
+
+jobs:
+  # This will trigger the existing valk-server build but ensure we wait for it
+  trigger-server-build:
+    uses: ./.github/workflows/build-valk-server.yaml
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
+
+
+  # This will run after server build
+  trigger-docker-build:
+    needs: trigger-server-build
+    uses: ./.github/workflows/build-chromium-demo.yaml
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag }}
+
+
+  # This will run after docker build - (python integration tests require updated docker image)
+  trigger-python-tests:
+    needs: trigger-docker-build
+    uses: ./.github/workflows/test-python.yaml
+    secrets: inherit
+    with:
+
+      tag: ${{ inputs.tag }}
+
+
+  # Final publish job that creates the release
+  publish:
+    needs: [trigger-server-build, trigger-docker-build, trigger-python-tests]
+    runs-on: ubuntu-latest
+    if: inputs.tag != 'dry-run'
+    steps:
+        - name: Install the latest version of uv and set the python version
+          uses: astral-sh/setup-uv@v5
+
+        - name: Check version matches tag
+          run: |
+            # Install toml parser
+            uv pip install tomli
+            # Python script to check version
+            python -c '
+
+            import tomli
+            import sys
+            with open("pyproject.toml", "rb") as f:
+                data = tomli.load(f)
+            version = data["project"]["version"]
+            tag = "${{ inputs.tag }}"
+            if tag.startswith("v"):  # Remove v prefix if present
+                tag = tag[1:]
+            if version != tag:
+                print(f"Version mismatch: pyproject.toml has {version} but tag is {tag}")
+                sys.exit(1)
+            '
+
+        - uses: actions/checkout@v4
+        - name: Build wheel
+          run: |
+            uv build --wheel
+
+        - name: Upload wheel artifact
+          uses: actions/upload-artifact@v4
+          with:
+            name: python-dist-${{ inputs.tag }}
+            path: dist/*
+
+        - name: Download all artifacts
+          uses: actions/download-artifact@v4
+          with:
+            path: artifacts
+
+        - name: Upload to Release
+          uses: softprops/action-gh-release@v1
+          with:
+            tag_name: ${{ inputs.tag }}
+            files: artifacts/**/*

@@ -9,6 +9,7 @@ on:
     paths:
       - 'valk-server/**'
       - '.github/workflows/build-valk-server.yaml'
+  workflow_dispatch:  # Allow manual/API triggers
 
 env:
   VALK_SERVER_DIR: valk-server
@@ -63,3 +64,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ env.VALK_SERVER_DIR }}/target/release/valk-server
+          generate_release_notes: true
