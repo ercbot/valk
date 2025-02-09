@@ -42,7 +42,7 @@ jobs:
 
   # This will run after docker build - (python integration tests require updated docker image)
   integration-tests:
-    needs: [trigger-server-build, python-lint]
+    needs: [trigger-docker-build, python-lint]
     uses: ./.github/workflows/python-integration-tests.yaml
     secrets: inherit
 
