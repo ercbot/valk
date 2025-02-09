@@ -40,7 +40,7 @@ jobs:
 
   # Make sure the version in pyproject.toml matches the tag
   check-pyproject-version:
-    if: inputs.tag != 'dry-run'
+    
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,11 +50,8 @@ jobs:
 
       - name: Check version matches tag (pyproject.toml)
         run: |
-          # Install toml parser
-          uv pip install tomli
           # Python script to check version
-          python -c '
-
+          uv run -c '
           import tomli
           import sys
           with open("pyproject.toml", "rb") as f:
