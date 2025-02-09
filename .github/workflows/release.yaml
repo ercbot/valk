@@ -13,7 +13,7 @@ permissions:
   contents: write
   packages: write
   actions: read
-
+  id-token: write
 
 jobs:
   # This will trigger the existing valk-server build but ensure we wait for it
