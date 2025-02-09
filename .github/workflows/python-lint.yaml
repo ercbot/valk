@@ -16,14 +16,15 @@ on:
       - 'valk/**'
       - 'uv.lock'
       - 'pyproject.toml'
-      - '.github/workflows/test-python.yaml'
+      - '.github/workflows/python-lint.yaml'
   pull_request:
     branches: [ "main" ]
     paths:
       - 'valk/**'
       - 'uv.lock'
       - 'pyproject.toml'
-      - '.github/workflows/test-python.yaml'
+      - '.github/workflows/python-lint.yaml'
+
 
 
 jobs:
