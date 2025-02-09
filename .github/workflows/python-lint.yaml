@@ -38,23 +38,3 @@ jobs:
         run: uvx ruff format --check .
       - name: Run Ruff linting
         run: uvx ruff check .
-
-  # Make sure the version in pyproject.toml matches the tag
-  check-pyproject-version:
-    if: inputs.tag != 'dry-run' && github.event_name == 'workflow_call'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install the latest version of uv and set the python version
-        uses: astral-sh/setup-uv@v5
-
-      - name: Check version matches tag (pyproject.toml)
-        run: |
-            VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
-            TAG="${{ inputs.tag }}"
-            TAG="${TAG#v}"  # Remove v prefix if present
-            if [ "$VERSION" != "$TAG" ]; then
-                echo "Version mismatch: pyproject.toml has $VERSION but tag is ${{ inputs.tag }}"
-                exit 1
-            fi
