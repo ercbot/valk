@@ -1,6 +1,13 @@
 name: Build Valk Server
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release Tag
+        required: true
+        default: dry-run
+        type: string
   push:
     paths:
       - 'valk-server/**'
