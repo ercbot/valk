@@ -65,10 +65,3 @@ jobs:
         with:
           name: valk-server-linux-x86_64
           path: ${{ env.VALK_SERVER_DIR }}/target/release/valk-server
-
-      - name: Publish Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: ${{ env.VALK_SERVER_DIR }}/target/release/valk-server
-          generate_release_notes: true

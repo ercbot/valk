@@ -9,7 +9,6 @@ on:
           default: dry-run
           type: string
 
-
 permissions:
   contents: write
   packages: write
@@ -36,8 +35,7 @@ jobs:
       actions: read    # For downloading artifacts
     with:
       tag: ${{ inputs.tag }}
-
-
+      
   # This will run after docker build - (python integration tests require updated docker image)
   trigger-python-tests:
     needs: trigger-docker-build

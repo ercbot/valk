@@ -10,7 +10,6 @@ on:
         type: string
 
 
-
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}-chromium-demo
@@ -23,8 +22,6 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,7 +33,6 @@ jobs:
           name: valk-server-linux-x86_64
           path: valk-server/docker-examples/chromium-demo/valk-server
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
 
       # Ensure binary is executable
       - name: Make binary executable
