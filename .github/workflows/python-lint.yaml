@@ -55,6 +55,6 @@ jobs:
             TAG="${{ inputs.tag }}"
             TAG="${TAG#v}"  # Remove v prefix if present
             if [ "$VERSION" != "$TAG" ]; then
-                echo "Version mismatch: pyproject.toml has $VERSION but tag is $TAG"
+                echo "Version mismatch: pyproject.toml has $VERSION but tag is ${{ inputs.tag }}"
                 exit 1
             fi
