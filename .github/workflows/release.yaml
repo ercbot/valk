@@ -43,10 +43,6 @@ jobs:
     needs: trigger-docker-build
     uses: ./.github/workflows/test-python.yaml
     secrets: inherit
-    with:
-
-      tag: ${{ inputs.tag }}
-
 
   # Final publish job that creates the release
   publish:
