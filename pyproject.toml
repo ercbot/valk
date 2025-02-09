@@ -1,6 +1,6 @@
 [project]
 name = "valk"
-version = "0.0.1"
+version = "0.0.2"
 description = "Remote control of a computer"
 readme = "README.md"
 requires-python = ">=3.12"
