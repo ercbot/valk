@@ -24,17 +24,25 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
 
-pub trait InputDriver: Mouse + Keyboard + Send + 'static {}
-impl<T: Mouse + Keyboard + Send + 'static> InputDriver for T {}
+pub trait InputDriver: Mouse + Keyboard + Send + Sync + 'static {}
+impl<T: Mouse + Keyboard + Send + Sync + 'static> InputDriver for T {}
 
-pub async fn create_action_queue() -> Arc<ActionQueue<Enigo>> {
+#[derive(Clone)]
+pub struct ActionQueue<T: InputDriver> {
+    queue: Arc<Mutex<Vec<QueueItem>>>,
+    input_driver: Arc<Mutex<T>>,
+    monitor_tx: broadcast::Sender<MonitorEvent>,
+}
+
+pub type SharedQueue = Arc<ActionQueue<Enigo>>;
+
+pub async fn create_action_queue() -> SharedQueue {
     let settings = Settings {
         x11_display: Some(env::var("DISPLAY").unwrap()),
         ..Settings::default()
     };
     let enigo = Enigo::new(&settings).unwrap();
-    let queue = ActionQueue::new(enigo);
-    let queue = Arc::new(queue);
+    let queue = Arc::new(ActionQueue::new(enigo));
     queue.start_processing().await;
     queue
 }
@@ -47,16 +55,6 @@ type QueueItem = (Action, ActionSender);
 pub enum MonitorEvent {
     Request(ActionRequest),
     Response(ActionResponse),
-}
-
-/// The GenericActionQueue for testing
-/// Can be used to test with a mock input driver
-/// Or a real input driver as ActionQueue
-#[derive(Clone)]
-pub struct ActionQueue<T: InputDriver> {
-    queue: Arc<Mutex<Vec<QueueItem>>>,
-    input_driver: Arc<Mutex<T>>,
-    monitor_tx: broadcast::Sender<MonitorEvent>,
 }
 
 // Implementation stays on the generic type

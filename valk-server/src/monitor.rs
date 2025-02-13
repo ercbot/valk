@@ -6,18 +6,19 @@ use axum::{
     response::IntoResponse,
 };
 
-use crate::action_queue::{ActionQueue, InputDriver};
+use crate::action_queue::SharedQueue;
+use crate::AppState;
 
 use std::sync::Arc;
 
-pub async fn monitor_websocket<D: InputDriver>(
+pub async fn monitor_websocket(
     ws: WebSocketUpgrade,
-    extract::State(queue): extract::State<Arc<ActionQueue<D>>>,
+    extract::State(state): extract::State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(|socket| handle_socket(socket, queue))
+    ws.on_upgrade(move |socket| handle_socket(socket, state.action_queue.clone()))
 }
 
-async fn handle_socket<D: InputDriver>(mut socket: WebSocket, queue: Arc<ActionQueue<D>>) {
+async fn handle_socket(mut socket: WebSocket, queue: SharedQueue) {
     let mut rx = queue.subscribe_monitor();
 
     while let Ok(event) = rx.recv().await {
