@@ -83,7 +83,7 @@ struct AppState {
 
 #[derive(Debug, Serialize)]
 struct SessionResponse {
-    token: String,
+    session_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,7 +91,7 @@ struct TokenRequest {
     clear_existing: Option<bool>,
 }
 
-// New endpoint to get session token
+// Updated endpoint to get session ID
 async fn create_session(
     extract::State(state): extract::State<Arc<AppState>>,
     Json(request): Json<TokenRequest>,
@@ -101,7 +101,7 @@ async fn create_session(
     }
     let session = state.session_manager.create_session();
     Json(SessionResponse {
-        token: session.token,
+        session_id: session.id,
     })
 }
 
@@ -111,13 +111,15 @@ async fn validate_session<B>(
     request: Request<Body>,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    let token = request
+    let session_id = request
         .headers()
-        .get("X-Session-Token")
+        .get("X-Session-ID")
         .and_then(|v| v.to_str().ok());
 
-    match token {
-        Some(token) if state.session_manager.validate_token(token) => Ok(next.run(request).await),
+    match session_id {
+        Some(session_id) if state.session_manager.validate_session_id(session_id) => {
+            Ok(next.run(request).await)
+        }
         _ => Err(StatusCode::UNAUTHORIZED),
     }
 }
@@ -133,7 +135,7 @@ async fn main() {
         .init();
 
     let action_queue: SharedQueue = create_action_queue().await;
-    let session_manager = Arc::new(SessionManager::new());
+    let session_manager = Arc::new(SessionManager::new(config.session_duration));
 
     let state = Arc::new(AppState {
         action_queue,
