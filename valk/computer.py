@@ -36,7 +36,49 @@ class Computer:
             base_url: The base URL of the remote control API (e.g., 'http://localhost:3000')
         """
         self._client = httpx.Client(base_url=base_url.rstrip("/"))
+        self._session_id = None
         self.system_info = self.get_system_info()
+        self._create_session()
+
+    def _create_session(self):
+        """Create a new session with the server"""
+        response = self._client.post("/v1/session", json={"clear_existing": True})
+        if response.status_code != 200:
+            raise ValkAPIError(
+                f"Failed to create session: {response.status_code} - {response.text}"
+            )
+        self._session_id = response.json()["session_id"]
+
+    def _execute_action(
+        self, action: str, data: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """Execute an action on the remote computer"""
+        if not self._session_id:
+            self._create_session()
+
+        headers = {"X-Session-ID": self._session_id}
+        response = self._client.post(
+            "/v1/action",
+            json={"action": action, "data": data or {}},
+            headers=headers,
+        )
+
+        if response.status_code == 401:
+            # Session expired, create new one and retry
+            self._create_session()
+            headers = {"X-Session-ID": self._session_id}
+            response = self._client.post(
+                "/v1/action",
+                json={"action": action, "data": data or {}},
+                headers=headers,
+            )
+
+        if response.status_code != 200:
+            raise ValkAPIError(
+                f"Failed to execute action {action}: {response.status_code} - {response.text}"
+            )
+
+        return response.json()
 
     def get_system_info(self) -> SystemInfo:
         """Get information about the remote system"""
@@ -49,26 +91,16 @@ class Computer:
 
     def screenshot(self) -> str:
         """Take a screenshot of the remote screen, returning a base64 encoded image"""
-        response = self._client.get("/v1/actions/screenshot")
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to take screenshot: {response.status_code} - {response.text}"
-            )
-
-        return response.json()["data"]["image"]
+        result = self._execute_action("screenshot")
+        return result["data"]["image"]
 
     def cursor_position(self) -> Tuple[int, int]:
         """Get the current cursor position
         Returns:
             Tuple of (x, y) coordinates
         """
-        response = self._client.get("/v1/actions/cursor_position")
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to get cursor position: {response.status_code} - {response.text}"
-            )
-        data = response.json()["data"]
-        return data["x"], data["y"]
+        result = self._execute_action("cursor_position")
+        return result["data"]["x"], result["data"]["y"]
 
     def move_mouse(self, x: int, y: int) -> "Computer":
         """Move the mouse to specific coordinates
@@ -89,67 +121,37 @@ class Computer:
                 f"Y coordinate {y} outside valid range 0-{self.system_info.display_height}"
             )
 
-        response = self._client.post("/v1/actions/mouse_move", json={"x": x, "y": y})
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to move mouse: {response.status_code} - {response.text}"
-            )
+        self._execute_action("mouse_move", {"x": x, "y": y})
         return self
 
     def left_click(self) -> "Computer":
         """Perform a left click at the current mouse position"""
-        response = self._client.post("/v1/actions/left_click")
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to left click: {response.status_code} - {response.text}"
-            )
+        self._execute_action("left_click")
         return self
 
     def right_click(self) -> "Computer":
         """Perform a right click at the current mouse position"""
-        response = self._client.post("/v1/actions/right_click")
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to right click: {response.status_code} - {response.text}"
-            )
+        self._execute_action("right_click")
         return self
 
     def middle_click(self) -> "Computer":
         """Perform a middle click at the current mouse position"""
-        response = self._client.post("/v1/actions/middle_click")
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to middle click: {response.status_code} - {response.text}"
-            )
+        self._execute_action("middle_click")
         return self
 
     def double_click(self) -> "Computer":
         """Perform a double click at the current mouse position"""
-        response = self._client.post("/v1/actions/double_click")
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to double click: {response.status_code} - {response.text}"
-            )
+        self._execute_action("double_click")
         return self
 
     def left_click_drag(self, x: int, y: int) -> "Computer":
         """Click and drag to the specified coordinates"""
-        response = self._client.post(
-            "/v1/actions/left_click_drag", json={"x": x, "y": y}
-        )
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to drag: {response.status_code} - {response.text}"
-            )
+        self._execute_action("left_click_drag", {"x": x, "y": y})
         return self
 
     def type(self, text: str) -> "Computer":
         """Type the specified text"""
-        response = self._client.post("/v1/actions/type", json={"text": text})
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to type text: {response.status_code} - {response.text}"
-            )
+        self._execute_action("type", {"text": text})
         return self
 
     def key(self, key: str) -> "Computer":
@@ -158,11 +160,7 @@ class Computer:
         Args:
             key: Key to press (e.g., "Return", "alt+Tab", "ctrl+s", "Up", "KP_0")
         """
-        response = self._client.post("/v1/actions/key", json={"text": key})
-        if response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to press key: {response.status_code} - {response.text}"
-            )
+        self._execute_action("key", {"text": key})
         return self
 
     def start_debug_viewer(self, port=8000):
