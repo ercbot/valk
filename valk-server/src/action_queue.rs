@@ -24,8 +24,8 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
 
-pub trait InputDriver: Mouse + Keyboard + Send + Sync + 'static {}
-impl<T: Mouse + Keyboard + Send + Sync + 'static> InputDriver for T {}
+pub trait InputDriver: Mouse + Keyboard + Send + 'static {}
+impl<T: Mouse + Keyboard + Send + 'static> InputDriver for T {}
 
 #[derive(Clone)]
 pub struct ActionQueue<T: InputDriver> {
