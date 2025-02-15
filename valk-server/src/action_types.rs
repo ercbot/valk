@@ -12,24 +12,17 @@ pub enum Action {
     RightClick,
     MiddleClick,
     DoubleClick,
-    #[serde(rename_all = "snake_case")]
     MouseMove {
-        #[serde(flatten)]
         input: MouseMoveInput,
     },
-    #[serde(rename_all = "snake_case")]
     LeftClickDrag {
-        #[serde(flatten)]
         input: MouseMoveInput,
     },
-    #[serde(rename_all = "snake_case")]
     TypeText {
-        #[serde(flatten)]
         input: TypeTextInput,
     },
     #[serde(rename_all = "snake_case")]
     KeyPress {
-        #[serde(flatten)]
         input: KeyPressInput,
     },
     Screenshot,
