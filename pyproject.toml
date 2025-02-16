@@ -43,6 +43,7 @@ examples = [
 tests = [
     "docker>=7.1.0",
     "pillow>=11.1.0",
+    "pytest-httpserver>=1.1.1",
     "pytest>=8.3.4",
 ]
 

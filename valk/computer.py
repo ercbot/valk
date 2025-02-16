@@ -108,10 +108,8 @@ class Computer:
             headers=headers,
         )
 
-        print(response.json())
-
-        if response.status_code == 401:
-            # Session expired, create new one and retry
+        if response.status_code == 401:  # Session expired
+            # Create new session and retry
             self._create_session()
             headers = {"X-Session-ID": self._session_id}
             response = self._client.post(
