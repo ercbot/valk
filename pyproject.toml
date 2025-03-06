@@ -1,11 +1,28 @@
 [project]
 name = "valk"
-version = "0.0.2"
-description = "Remote control of a computer"
+version = "0.0.3"
+description = "Simple, observable computer use - Remote desktop for AI agents "
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.25.1",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Hardware",
+    "Topic :: System :: Operating System",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces"
 ]
 license = {text = "MIT"}
 
@@ -26,6 +43,7 @@ examples = [
 tests = [
     "docker>=7.1.0",
     "pillow>=11.1.0",
+    "pytest-httpserver>=1.1.1",
     "pytest>=8.3.4",
 ]
 

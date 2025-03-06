@@ -25,7 +25,6 @@ impl Config {
     pub fn new() -> Self {
         let mut config = Config::default();
 
-        // Override with environment variables if they exist
         if let Ok(host) = env::var("VALK_HOST") {
             config.host = host;
         }

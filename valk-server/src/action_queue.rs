@@ -1,6 +1,4 @@
 use crate::key_press::KeyPress;
-use axum::http::StatusCode;
-use axum::response::{IntoResponse, Json};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use enigo::InputError;
 use enigo::{
@@ -10,123 +8,62 @@ use enigo::{
     Enigo, Keyboard, Mouse, Settings,
 };
 use image::ImageFormat;
-use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde::Serialize;
 use std::env;
 use std::io::Cursor;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::time::{sleep, timeout, Duration};
 use xcap::Monitor;
+
+use crate::action_types::*;
 
 const ACTION_DELAY: Duration = Duration::from_millis(500);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
 
-/// Represents possible errors that can occur during action execution
-#[derive(Debug, Clone, Serialize)]
-pub enum ActionError {
-    /// Action took too long to complete
-    Timeout,
-    /// Action failed during execution
-    ExecutionFailed(String),
-    /// Invalid input parameters
-    InvalidInput(String),
-    /// Internal queue communication error
-    ChannelError(String),
-}
+pub trait InputDriver: Mouse + Keyboard + Send + 'static {}
+impl<T: Mouse + Keyboard + Send + 'static> InputDriver for T {}
 
-impl IntoResponse for ActionError {
-    fn into_response(self) -> axum::response::Response {
-        let (status, message) = match self {
-            ActionError::Timeout => (StatusCode::REQUEST_TIMEOUT, "Action timed out".to_string()),
-            ActionError::ExecutionFailed(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            ActionError::InvalidInput(msg) => (StatusCode::BAD_REQUEST, msg),
-            ActionError::ChannelError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-        };
-
-        (status, message).into_response()
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Action {
-    LeftClick,
-    RightClick,
-    MiddleClick,
-    DoubleClick,
-    MouseMove { x: u32, y: u32 },
-    LeftClickDrag { x: u32, y: u32 },
-    TypeText { text: String },
-    KeyPress { key: String },
-    Screenshot,
-    CursorPosition,
-}
-
-/// Result of a successful action execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ActionResult {
-    /// Optional data payload (e.g., screenshot data, cursor position)
-    pub data: Option<serde_json::Value>,
-}
-
-impl IntoResponse for ActionResult {
-    fn into_response(self) -> axum::response::Response {
-        Json(json!({
-            "status": "success",
-            "data": self.data
-        }))
-        .into_response()
-    }
-}
-
-pub async fn create_action_queue() -> Arc<ActionQueue> {
-    let settings = Settings {
-        x11_display: Some(env::var("DISPLAY").unwrap()),
-        ..Settings::default()
-    };
-    let enigo = Enigo::new(&settings).unwrap();
-    let queue = ActionQueue::new(enigo);
-    let queue = Arc::new(queue);
-    queue.start_processing().await;
-    queue
-}
-
-// Define type aliases for the complex parts
-type ActionSender = oneshot::Sender<Result<ActionResult, ActionError>>;
-type QueueItem = (Action, ActionSender);
-
-/// The GenericActionQueue for testing
-/// Can be used to test with a mock input driver
-/// Or a real input driver as ActionQueue
 #[derive(Clone)]
-pub struct GenericActionQueue<T: Mouse + Keyboard + Send + 'static> {
+pub struct ActionQueue<T: InputDriver> {
     queue: Arc<Mutex<Vec<QueueItem>>>,
     input_driver: Arc<Mutex<T>>,
     monitor_tx: broadcast::Sender<MonitorEvent>,
 }
 
-// Type alias for the "real" production ActionQueue
-pub type ActionQueue = GenericActionQueue<Enigo>;
+pub type SharedQueue = Arc<ActionQueue<Enigo>>;
 
-#[derive(Clone, Debug, Serialize)]
-pub struct MonitorEvent {
-    pub timestamp: u64,
-    pub action: Action,
-    pub result: Result<ActionResult, ActionError>,
+pub async fn create_action_queue() -> SharedQueue {
+    let settings = Settings {
+        x11_display: Some(env::var("DISPLAY").unwrap()),
+        ..Settings::default()
+    };
+    let enigo = Enigo::new(&settings).unwrap();
+    let queue = Arc::new(ActionQueue::new(enigo));
+    queue.start_processing().await;
+    queue
+}
+
+// Define type aliases for the complex parts
+type ActionSender = oneshot::Sender<Result<ActionOutput, ActionError>>;
+type QueueItem = (Action, ActionSender);
+
+#[derive(Clone, Serialize)]
+pub enum MonitorEvent {
+    Request(ActionRequest),
+    Response(ActionResponse),
 }
 
 // Implementation stays on the generic type
-impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
-    pub fn new(enigo: T) -> Self {
-        let (monitor_tx, _) = broadcast::channel(100); // Buffer size of 100 event
-
-        GenericActionQueue {
+impl<T: InputDriver> ActionQueue<T> {
+    pub fn new(input_driver: T) -> Self {
+        let (monitor_tx, _) = broadcast::channel(100);
+        ActionQueue {
             queue: Arc::new(Mutex::new(Vec::new())),
-            input_driver: Arc::new(Mutex::new(enigo)),
+            input_driver: Arc::new(Mutex::new(input_driver)),
             monitor_tx,
         }
     }
@@ -139,32 +76,45 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
     async fn queue_action(
         &self,
         action: Action,
-    ) -> oneshot::Receiver<Result<ActionResult, ActionError>> {
+    ) -> oneshot::Receiver<Result<ActionOutput, ActionError>> {
         let (tx, rx) = oneshot::channel();
         let mut queue = self.queue.lock().await;
         queue.push((action, tx));
         rx
     }
 
-    pub async fn execute_action(&self, action: Action) -> Result<ActionResult, ActionError> {
-        let rx = self.queue_action(action.clone()).await;
+    pub async fn execute_action(&self, request: ActionRequest) -> ActionResponse {
+        // Send request event
+        let _ = self.monitor_tx.send(MonitorEvent::Request(request.clone()));
 
-        match timeout(ACTION_TIMEOUT, rx).await {
-            Ok(result) => {
-                result
-                    .map_err(|e| ActionError::ChannelError(e.to_string())) // Channel errors
-                    .and_then(|r| r)
-            }
+        let rx = self.queue_action(request.action.clone()).await;
 
+        let response = match timeout(ACTION_TIMEOUT, rx).await {
+            Ok(result) => match result {
+                Ok(Ok(output)) => ActionResponse::success(request.id, request.action, output),
+                Ok(Err(error)) => ActionResponse::error(request.id, request.action, error),
+                Err(e) => ActionResponse::error(
+                    request.id,
+                    request.action,
+                    ActionError::ChannelError(e.to_string()),
+                ),
+            },
             Err(_) => {
                 // Timeout occurred - remove action from queue if it's still there
                 let mut queue = self.queue.lock().await;
                 queue.retain(|(a, _)| {
-                    !std::mem::discriminant(a).eq(&std::mem::discriminant(&action))
+                    !std::mem::discriminant(a).eq(&std::mem::discriminant(&request.action))
                 });
-                Err(ActionError::Timeout)
+                ActionResponse::error(request.id, request.action, ActionError::Timeout)
             }
-        }
+        };
+
+        // Send response event
+        let _ = self
+            .monitor_tx
+            .send(MonitorEvent::Response(response.clone()));
+
+        response
     }
 
     async fn action_delay() {
@@ -174,7 +124,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
     async fn handle_action(
         input_driver: &mut T,
         action: &Action,
-    ) -> Result<ActionResult, ActionError> {
+    ) -> Result<ActionOutput, ActionError> {
         match action {
             Action::LeftClick => {
                 let press_result = input_driver.button(Button::Left, Press);
@@ -186,7 +136,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                 };
 
                 release_result
-                    .map(|_| ActionResult { data: None })
+                    .map(|_| ActionOutput::NoData)
                     .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
             }
             Action::RightClick => {
@@ -199,7 +149,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                 };
 
                 release_result
-                    .map(|_| ActionResult { data: None })
+                    .map(|_| ActionOutput::NoData)
                     .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
             }
             Action::MiddleClick => {
@@ -212,7 +162,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                 };
 
                 release_result
-                    .map(|_| ActionResult { data: None })
+                    .map(|_| ActionOutput::NoData)
                     .map_err(|e| ActionError::ExecutionFailed(e.to_string()))
             }
             Action::DoubleClick => {
@@ -235,7 +185,7 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                         sleep(DOUBLE_CLICK_DELAY).await,
                         input_driver.button(Button::Left, Release),
                     ) {
-                        (Ok(_), _, Ok(_)) => Ok(ActionResult { data: None }),
+                        (Ok(_), _, Ok(_)) => Ok(ActionOutput::NoData),
                         _ => Err(ActionError::ExecutionFailed(
                             "Failed to execute second click".into(),
                         )),
@@ -246,22 +196,22 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                     ))
                 }
             }
-            Action::MouseMove { x, y } => input_driver
-                .move_mouse(*x as i32, *y as i32, Abs)
-                .map(|_| ActionResult { data: None })
+            Action::MouseMove { input } => input_driver
+                .move_mouse(input.x as i32, input.y as i32, Abs)
+                .map(|_| ActionOutput::NoData)
                 .map_err(|e| ActionError::ExecutionFailed(e.to_string())),
-            Action::LeftClickDrag { x, y } => {
+            Action::LeftClickDrag { input } => {
                 // First press and hold the left button
                 if let Err(e) = input_driver.button(Button::Left, Press) {
                     return Err(ActionError::ExecutionFailed(e.to_string()))
-                        as Result<ActionResult, ActionError>;
+                        as Result<ActionOutput, ActionError>;
                 }
 
                 sleep(DOUBLE_CLICK_DELAY).await;
 
                 // We need to use interpolation to drag the mouse
                 let current_pos = input_driver.location().unwrap();
-                let target_pos = (*x as i32, *y as i32);
+                let target_pos = (input.x as i32, input.y as i32);
 
                 let distance = (((current_pos.0 - target_pos.0).pow(2)
                     + (current_pos.1 - target_pos.1).pow(2))
@@ -301,28 +251,28 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
 
                 // Release button
                 match input_driver.button(Button::Left, Release) {
-                    Ok(_) => Ok(ActionResult { data: None }),
+                    Ok(_) => Ok(ActionOutput::NoData),
                     Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
                 }
             }
-            Action::TypeText { text } => {
+            Action::TypeText { input } => {
                 // First check if text is empty
-                if text.is_empty() {
+                if input.text.is_empty() {
                     return Err(ActionError::InvalidInput(
                         "Text cannot be empty".to_string(),
                     ));
                 }
 
                 // Attempt to type the text with detailed error handling
-                match input_driver.text(text) {
-                    Ok(_) => Ok(ActionResult { data: None }),
+                match input_driver.text(&input.text) {
+                    Ok(_) => Ok(ActionOutput::NoData),
                     Err(e) => {
                         // Log the specific type of InputError
                         match e {
                             InputError::Simulate(msg) => {
                                 eprintln!("Simulation error: {}", msg);
                                 let non_ascii_chars: Vec<char> =
-                                    text.chars().filter(|c| !c.is_ascii()).collect();
+                                    input.text.chars().filter(|c| !c.is_ascii()).collect();
                                 let has_non_ascii = !non_ascii_chars.is_empty();
 
                                 if has_non_ascii {
@@ -342,8 +292,8 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                     }
                 }
             }
-            Action::KeyPress { key } => {
-                if let Ok(key_press) = KeyPress::from_str(key) {
+            Action::KeyPress { input } => {
+                if let Ok(key_press) = KeyPress::from_str(&input.key) {
                     let result: Result<(), ActionError> = async {
                         // Press modifiers
                         for modifier in &key_press.modifiers {
@@ -376,17 +326,18 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                         Ok(())
                     }
                     .await;
-                    result.map(|()| ActionResult { data: None })
+                    result.map(|_| ActionOutput::NoData)
                 } else {
                     Err(ActionError::InvalidInput(format!(
                         "Invalid key format or key not found: {}",
-                        key
+                        input.key
                     )))
                 }
             }
             Action::CursorPosition => match input_driver.location() {
-                Ok((x, y)) => Ok(ActionResult {
-                    data: Some(serde_json::json!({ "x": x, "y": y })),
+                Ok((x, y)) => Ok(ActionOutput::CursorPosition {
+                    x: x as u32,
+                    y: y as u32,
                 }),
                 Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
             },
@@ -413,8 +364,8 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
                         })?;
                         let bytes = cursor.into_inner();
                         let base64_image = BASE64.encode(bytes);
-                        Ok(ActionResult {
-                            data: Some(serde_json::json!({ "image": base64_image })),
+                        Ok(ActionOutput::Screenshot {
+                            image: base64_image,
                         })
                     })
             }
@@ -424,7 +375,6 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
     pub async fn start_processing(&self) {
         let queue_clone = self.queue.clone();
         let input_driver_clone = self.input_driver.clone();
-        let monitor_tx = self.monitor_tx.clone();
 
         tokio::spawn(async move {
             loop {
@@ -439,17 +389,6 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
 
                     let result = Self::handle_action(&mut input_driver, &action).await;
 
-                    // Send monitor event
-                    let monitor_event = MonitorEvent {
-                        timestamp: SystemTime::now()
-                            .duration_since(UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64,
-                        action: action.clone(),
-                        result: result.clone(),
-                    };
-                    let _ = monitor_tx.send(monitor_event);
-
                     // Notify completion with result
                     let _ = tx.send(result);
                 }
@@ -462,9 +401,8 @@ impl<T: Mouse + Keyboard + Send + 'static> GenericActionQueue<T> {
 
 /// Mock driver for testing
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
-
     use enigo::{Axis, Coordinate, Direction, InputResult, Key};
 
     pub struct MockEnigo {
@@ -529,10 +467,10 @@ mod tests {
         }
     }
 
-    // Helper function to create an action queue with a mock enigo
-    async fn create_test_action_queue() -> Arc<GenericActionQueue<MockEnigo>> {
+    // Make the helper function public
+    pub async fn create_test_action_queue() -> Arc<ActionQueue<MockEnigo>> {
         let mock_enigo = MockEnigo::new();
-        let action_queue = GenericActionQueue::new(mock_enigo);
+        let action_queue = ActionQueue::new(mock_enigo);
         let action_queue = Arc::new(action_queue);
         action_queue.start_processing().await;
         action_queue
@@ -543,9 +481,14 @@ mod tests {
         let queue = create_test_action_queue().await;
 
         let result = queue
-            .execute_action(Action::MouseMove { x: 100, y: 200 })
+            .execute_action(ActionRequest {
+                id: "test_mouse_move".to_string(),
+                action: Action::MouseMove {
+                    input: MouseMoveInput { x: 100, y: 200 },
+                },
+            })
             .await;
-        assert!(result.is_ok());
+        assert!(matches!(result.status, ActionResponseStatus::Success));
 
         let enigo = queue.input_driver.lock().await;
         assert_eq!(enigo.mouse_pos, (100, 200));
@@ -556,8 +499,13 @@ mod tests {
     async fn test_left_click() {
         let queue = create_test_action_queue().await;
 
-        let result = queue.execute_action(Action::LeftClick).await;
-        assert!(result.is_ok());
+        let result = queue
+            .execute_action(ActionRequest {
+                id: "test_left_click".to_string(),
+                action: Action::LeftClick,
+            })
+            .await;
+        assert!(matches!(result.status, ActionResponseStatus::Success));
 
         let enigo = queue.input_driver.lock().await;
         assert!(enigo.last_action.contains("button_Left"));
@@ -570,14 +518,19 @@ mod tests {
         let test_texts = ["Hello, World!", "1234567890", "Special chars: !@#$%^&*()"];
 
         for text in test_texts {
-            let result = queue
-                .execute_action(Action::TypeText {
-                    text: text.to_string(),
+            let response = queue
+                .execute_action(ActionRequest {
+                    id: "test_type_text".to_string(),
+                    action: Action::TypeText {
+                        input: TypeTextInput {
+                            text: text.to_string(),
+                        },
+                    },
                 })
                 .await;
 
-            match &result {
-                Ok(_) => {
+            match response.status {
+                ActionResponseStatus::Success => {
                     let enigo = queue.input_driver.lock().await;
                     assert_eq!(
                         enigo.last_action,
@@ -586,8 +539,8 @@ mod tests {
                         text
                     );
                 }
-                Err(e) => {
-                    panic!("Failed to type text '{}': {:?}", text, e);
+                ActionResponseStatus::Error => {
+                    panic!("Failed to type text '{}': {:?}", text, response.error);
                 }
             }
         }
@@ -614,14 +567,19 @@ mod tests {
         ];
 
         for text in test_texts {
-            let result = queue
-                .execute_action(Action::TypeText {
-                    text: text.to_string(),
+            let response = queue
+                .execute_action(ActionRequest {
+                    id: "test_type_unicode".to_string(),
+                    action: Action::TypeText {
+                        input: TypeTextInput {
+                            text: text.to_string(),
+                        },
+                    },
                 })
                 .await;
 
-            match &result {
-                Ok(_) => {
+            match response.status {
+                ActionResponseStatus::Success => {
                     let enigo = queue.input_driver.lock().await;
                     assert_eq!(
                         enigo.last_action,
@@ -630,8 +588,8 @@ mod tests {
                         text
                     );
                 }
-                Err(e) => {
-                    panic!("Failed to type text '{}': {:?}", text, e);
+                ActionResponseStatus::Error => {
+                    panic!("Failed to type text '{}': {:?}", text, response.error);
                 }
             }
         }
@@ -641,24 +599,34 @@ mod tests {
     async fn test_type_text_empty() {
         let queue = create_test_action_queue().await;
 
-        let result = queue
-            .execute_action(Action::TypeText {
-                text: "".to_string(),
+        let response = queue
+            .execute_action(ActionRequest {
+                id: "test_type_text_empty".to_string(),
+                action: Action::TypeText {
+                    input: TypeTextInput {
+                        text: "".to_string(),
+                    },
+                },
             })
             .await;
-        assert!(result.is_err());
+        assert!(matches!(response.status, ActionResponseStatus::Error));
     }
 
     #[tokio::test]
     async fn test_key_press() {
         let queue = create_test_action_queue().await;
 
-        let result = queue
-            .execute_action(Action::KeyPress {
-                key: "ctrl+c".to_string(),
+        let response = queue
+            .execute_action(ActionRequest {
+                id: "test_key_press".to_string(),
+                action: Action::KeyPress {
+                    input: KeyPressInput {
+                        key: "ctrl+c".to_string(),
+                    },
+                },
             })
             .await;
-        assert!(result.is_ok());
+        assert!(matches!(response.status, ActionResponseStatus::Success));
 
         let enigo = queue.input_driver.lock().await;
         // The last action should be releasing the ctrl key
@@ -671,16 +639,26 @@ mod tests {
 
         // First move the cursor
         let _ = queue
-            .execute_action(Action::MouseMove { x: 150, y: 250 })
+            .execute_action(ActionRequest {
+                id: "test_cursor_position".to_string(),
+                action: Action::MouseMove {
+                    input: MouseMoveInput { x: 150, y: 250 },
+                },
+            })
             .await;
 
         // Then get position
-        let result = queue.execute_action(Action::CursorPosition).await;
-        assert!(result.is_ok());
+        let response = queue
+            .execute_action(ActionRequest {
+                id: "test_cursor_position".to_string(),
+                action: Action::CursorPosition,
+            })
+            .await;
+        assert!(matches!(response.status, ActionResponseStatus::Success));
 
-        if let Ok(ActionResult { data: Some(data) }) = result {
-            assert_eq!(data["x"], 150);
-            assert_eq!(data["y"], 250);
+        if let Some(ActionOutput::CursorPosition { x, y }) = response.data {
+            assert_eq!(x, 150);
+            assert_eq!(y, 250);
         } else {
             panic!("Expected cursor position data");
         }
@@ -694,7 +672,14 @@ mod tests {
         let short_timeout = Duration::from_millis(10);
 
         // Attempt to execute an action with a short timeout
-        let result = timeout(short_timeout, queue.execute_action(Action::LeftClick)).await;
+        let result = timeout(
+            short_timeout,
+            queue.execute_action(ActionRequest {
+                id: "test_action_timeout".to_string(),
+                action: Action::LeftClick,
+            }),
+        )
+        .await;
 
         // The timeout should occur
         assert!(result.is_err());
@@ -704,8 +689,13 @@ mod tests {
     async fn test_double_click() {
         let queue = create_test_action_queue().await;
 
-        let result = queue.execute_action(Action::DoubleClick).await;
-        assert!(result.is_ok());
+        let response = queue
+            .execute_action(ActionRequest {
+                id: "test_double_click".to_string(),
+                action: Action::DoubleClick,
+            })
+            .await;
+        assert!(matches!(response.status, ActionResponseStatus::Success));
 
         let enigo = queue.input_driver.lock().await;
         // Should end with a release of left button
@@ -716,10 +706,15 @@ mod tests {
     async fn test_left_click_drag() {
         let queue = create_test_action_queue().await;
 
-        let result = queue
-            .execute_action(Action::LeftClickDrag { x: 300, y: 400 })
+        let response = queue
+            .execute_action(ActionRequest {
+                id: "test_left_click_drag".to_string(),
+                action: Action::LeftClickDrag {
+                    input: MouseMoveInput { x: 300, y: 400 },
+                },
+            })
             .await;
-        assert!(result.is_ok());
+        assert!(matches!(response.status, ActionResponseStatus::Success));
 
         let enigo = queue.input_driver.lock().await;
         assert_eq!(enigo.mouse_pos, (300, 400));
