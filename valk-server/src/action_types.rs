@@ -139,7 +139,7 @@ impl ActionResponse {
             timestamp: Utc::now(),
             status: ActionResponseStatus::Success,
             action,
-            data: data,
+            data,
             error: None,
         }
     }

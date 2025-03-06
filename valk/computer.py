@@ -30,101 +30,38 @@ class SystemInfo:
 class Computer:
     """Client for interacting with the remote computer control API"""
 
-    def __init__(self, base_url: str, clear_existing: bool = False):
+    def __init__(self, base_url: str):
         """
         Initialize a remote computer connection.
         Args:
             base_url: The base URL of the remote control API (e.g., 'http://localhost:3000')
-            clear_existing: If True, clear any existing session before creating a new one
-                           If False and a session exists, raise an error
         """
         self._client = httpx.Client(base_url=base_url.rstrip("/"))
-        self._session_id = None
         self.system_info = self.get_system_info()
-        self._create_session(clear_existing)
-
-    def __del__(self):
-        """Cleanup by ending the session when the object is destroyed"""
-        try:
-            if hasattr(self, "_session_id") and self._session_id:
-                self.end_session()
-        except:  # We want to silently fail cleanup if the server is unreachable
-            pass
-        finally:
-            if hasattr(self, "_client"):
-                self._client.close()
-
-    def _create_session(self, clear_existing: bool = False):
-        """Create a new session with the server
-
-        Args:
-            clear_existing: If True, clear any existing session before creating a new one
-                          If False and a session exists, raise an error
-
-        Raises:
-            ValkAPIError: If session creation fails or if a session already exists
-        """
-        response = self._client.post(
-            "/v1/session", json={"clear_existing": clear_existing}
-        )
-        if response.status_code == 409:  # Conflict - session exists
-            raise ValkAPIError(
-                "A session is already active on the server. "
-                "To force a new session, use Computer.end_session() first, "
-                "or initialize with clear_existing=True"
-            )
-        elif response.status_code != 200:
-            raise ValkAPIError(
-                f"Failed to create session: {response.status_code} - {response.text}"
-            )
-        self._session_id = response.json()["session_id"]
-
-    def end_session(self) -> None:
-        """End the current session if one exists"""
-        if not self._session_id:
-            return
-
-        headers = {"X-Session-ID": self._session_id}
-        try:
-            response = self._client.delete("/v1/session", headers=headers)
-            if response.status_code != 200:
-                raise ValkAPIError(
-                    f"Failed to end session: {response.status_code} - {response.text}"
-                )
-        finally:
-            self._session_id = None
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an action on the remote computer"""
-        if not self._session_id:
-            self._create_session()
-
-        headers = {"X-Session-ID": self._session_id}
         request = {"id": str(uuid.uuid4()), "action": action}
 
         response = self._client.post(
             "/v1/action",
             json=request,
-            headers=headers,
         )
 
-        if response.status_code == 401:  # Session expired
-            # Create new session and retry
-            self._create_session()
-            headers = {"X-Session-ID": self._session_id}
-            response = self._client.post(
-                "/v1/action",
-                json=request,
-                headers=headers,
-            )
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            try:
+                error_msg = (
+                    response.json().get("error", {}).get("message", response.text)
+                )
+            except:
+                error_msg = response.text
+            raise ValkAPIError(
+                f"Failed to execute action {action['type']}: {error_msg}"
+            ) from e
 
         response_data = response.json()
-
-        if response.status_code != 200:
-            error_msg = response_data.get("error", {}).get("message", response.text)
-            raise ValkAPIError(
-                f"Failed to execute action {action['type']}: {response.status_code} - {error_msg}"
-            )
 
         return response_data
 

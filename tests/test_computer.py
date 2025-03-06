@@ -3,7 +3,7 @@ import base64
 import pytest
 from pytest_httpserver import HTTPServer
 
-from valk.computer import Computer, SystemInfo, ValkAPIError
+from valk.computer import Computer
 
 
 @pytest.fixture
@@ -16,70 +16,39 @@ def mock_system_info():
     }
 
 
+def mock_action_response(action: dict, data: dict = None):
+    response = {
+        "id": "response-id",
+        "request_id": "request-id",
+        "timestamp": "2024-02-14T00:00:00Z",
+        "status": "success",
+        "action": action,
+    }
+    if data:
+        response["data"] = data
+    return response
+
+
 def test_init_computer(httpserver: HTTPServer, mock_system_info):
-    """Test computer initialization and session creation"""
+    """Test computer initialization"""
     # Mock system info endpoint
     httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
-
-    # Mock session creation
-    httpserver.expect_request(
-        "/v1/session", method="POST", json={"clear_existing": False}
-    ).respond_with_json({"session_id": "test-session"})
 
     computer = Computer(httpserver.url_for("/"))
 
     assert computer.system_info.os_type == "Linux"
     assert computer.system_info.display_width == 1920
-    assert computer._session_id == "test-session"
-
-
-def test_init_with_existing_session(httpserver: HTTPServer, mock_system_info):
-    """Test handling of existing session during initialization"""
-    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
-
-    # Mock session conflict
-    httpserver.expect_request(
-        "/v1/session", method="POST", json={"clear_existing": False}
-    ).respond_with_data(status=409, response_data="Session exists")
-
-    with pytest.raises(ValkAPIError) as exc:
-        Computer(httpserver.url_for("/"))
-    assert "session is already active" in str(exc.value)
-
-
-def test_end_session(httpserver: HTTPServer, mock_system_info):
-    """Test session cleanup"""
-    # Setup initial session
-    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
-    httpserver.expect_request("/v1/session", method="POST").respond_with_json(
-        {"session_id": "test-session"}
-    )
-
-    # Mock session deletion
-    httpserver.expect_request(
-        "/v1/session", method="DELETE", headers={"X-Session-ID": "test-session"}
-    ).respond_with_json({})
-
-    computer = Computer(httpserver.url_for("/"))
-    computer.end_session()
-
-    assert computer._session_id is None
 
 
 def test_screenshot(httpserver: HTTPServer, mock_system_info):
     """Test screenshot functionality"""
-    # Setup session
     httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
-    httpserver.expect_request("/v1/session", method="POST").respond_with_json(
-        {"session_id": "test-session"}
-    )
 
     # Mock screenshot action
     mock_image = base64.b64encode(b"fake image data").decode()
     httpserver.expect_request(
         "/v1/action",
         method="POST",
-        headers={"X-Session-ID": "test-session"},
     ).respond_with_json(
         {
             "id": "response-id",
@@ -98,38 +67,148 @@ def test_screenshot(httpserver: HTTPServer, mock_system_info):
 
 def test_move_mouse(httpserver: HTTPServer, mock_system_info):
     """Test mouse movement functionality"""
-    # Setup session
     httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
-    httpserver.expect_request("/v1/session", method="POST").respond_with_json(
-        {"session_id": "test-session"}
-    )
 
     # Mock mouse move action
     httpserver.expect_request(
         "/v1/action",
         method="POST",
-        headers={"X-Session-ID": "test-session"},
     ).respond_with_json(
-        {
-            "id": "response-id",
-            "request_id": "request-id",
-            "timestamp": "2024-02-14T00:00:00Z",
-            "status": "success",
-            "action": {"type": "mouse_move", "input": {"x": 100, "y": 200}},
-        }
+        mock_action_response({"type": "mouse_move", "input": {"x": 100, "y": 200}})
     )
 
     computer = Computer(httpserver.url_for("/"))
     computer.move_mouse(100, 200)
 
 
+def test_left_click(httpserver: HTTPServer, mock_system_info):
+    """Test left click functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+
+    httpserver.expect_request(
+        "/v1/action",
+        method="POST",
+    ).respond_with_json(mock_action_response({"type": "left_click"}))
+
+    computer = Computer(httpserver.url_for("/"))
+    computer.left_click()
+
+
+def test_right_click(httpserver: HTTPServer, mock_system_info):
+    """Test right click functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+
+    httpserver.expect_request(
+        "/v1/action",
+        method="POST",
+    ).respond_with_json(mock_action_response({"type": "right_click"}))
+
+    computer = Computer(httpserver.url_for("/"))
+    computer.right_click()
+
+
+def test_middle_click(httpserver: HTTPServer, mock_system_info):
+    """Test middle click functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+
+    httpserver.expect_request(
+        "/v1/action",
+        method="POST",
+    ).respond_with_json(mock_action_response({"type": "middle_click"}))
+
+    computer = Computer(httpserver.url_for("/"))
+    computer.middle_click()
+
+
+def test_double_click(httpserver: HTTPServer, mock_system_info):
+    """Test double click functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+
+    httpserver.expect_request(
+        "/v1/action",
+        method="POST",
+    ).respond_with_json(mock_action_response({"type": "double_click"}))
+
+    computer = Computer(httpserver.url_for("/"))
+    computer.double_click()
+
+
+def test_left_click_drag(httpserver: HTTPServer, mock_system_info):
+    """Test left click drag functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+
+    httpserver.expect_request(
+        "/v1/action",
+        method="POST",
+    ).respond_with_json(
+        mock_action_response({"type": "left_click_drag", "input": {"x": 100, "y": 200}})
+    )
+
+    computer = Computer(httpserver.url_for("/"))
+    computer.left_click_drag(100, 200)
+
+
+def test_type(httpserver: HTTPServer, mock_system_info):
+    """Test type functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+    computer = Computer(httpserver.url_for("/"))
+
+    # Test different unicode characters
+    texts = [
+        "Hello, world!",
+        "こんにちは世界",
+        "Привет мир",
+        "안녕하세요 세계",
+        "🤩🤗🦍🐒🤶",
+    ]
+
+    for text in texts:
+        httpserver.expect_request(
+            "/v1/action",
+            method="POST",
+        ).respond_with_json(
+            mock_action_response({"type": "type", "input": {"text": text}})
+        )
+
+        computer.type(text)
+
+
+def test_key(httpserver: HTTPServer, mock_system_info):
+    """Test key functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+    computer = Computer(httpserver.url_for("/"))
+
+    key = ["a", "ctrl+a", "ctrl+shift+a"]
+
+    for k in key:
+        httpserver.expect_request(
+            "/v1/action",
+            method="POST",
+        ).respond_with_json(mock_action_response({"type": "key", "input": {"key": k}}))
+
+        computer.key(k)
+
+
+def test_get_cursor_position(httpserver: HTTPServer, mock_system_info):
+    """Test get cursor position functionality"""
+    httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
+
+    httpserver.expect_request(
+        "/v1/action",
+        method="POST",
+    ).respond_with_json(
+        mock_action_response({"type": "cursor_position"}, {"x": 100, "y": 200})
+    )
+
+    computer = Computer(httpserver.url_for("/"))
+    position = computer.cursor_position()
+
+    assert position == (100, 200)
+
+
 def test_invalid_mouse_coordinates(httpserver: HTTPServer, mock_system_info):
     """Test handling of invalid mouse coordinates"""
-    # Setup session
     httpserver.expect_request("/v1/system/info").respond_with_json(mock_system_info)
-    httpserver.expect_request("/v1/session", method="POST").respond_with_json(
-        {"session_id": "test-session"}
-    )
 
     computer = Computer(httpserver.url_for("/"))
 
