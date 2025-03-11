@@ -101,6 +101,22 @@ VIEWER_HTML = """
             margin: auto;
             display: block;
         }
+        .event-type {
+            background: #e9ecef;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            min-width: 80px;
+            text-align: center;
+        }
+        .request {
+            color: #0c5460;
+            background-color: #d1ecf1;
+        }
+        .response {
+            color: #155724;
+            background-color: #d4edda;
+        }
     </style>
 </head>
 <body>
@@ -109,7 +125,6 @@ VIEWER_HTML = """
     <button class="clear-btn" onclick="clearEvents()">Clear Events</button>
     <div id="events"></div>
     <div id="screenshot-modal" class="screenshot-modal" onclick="hideScreenshot()">
-
         <img id="modal-image">
     </div>
 
@@ -121,7 +136,7 @@ VIEWER_HTML = """
         const modalImg = document.getElementById('modal-image');
 
         function connect() {
-            ws = new WebSocket('ws://VALK_BASE_URL/ws/monitor');
+            ws = new WebSocket('ws://VALK_BASE_URL/v1/monitor');
             ws.onopen = () => {
                 statusDiv.textContent = 'Connected';
                 statusDiv.className = 'connected';
@@ -158,32 +173,66 @@ VIEWER_HTML = """
 
         function addEvent(data) {
             const eventDiv = document.createElement('div');
-            eventDiv.className = 'event ' + (data.result.Ok ? 'success' : 'error');
             
-            const time = new Date(data.timestamp).toLocaleTimeString();
-            const action = typeof data.action === 'string' ? data.action : JSON.stringify(data.action);
-            const status = data.result.Ok ? 'Ok' : 'Error';
-            const resultData = data.result.Ok || data.result.Err;
-            
-            let dataContent = '';
-            if (action === 'Screenshot' && resultData.data?.image) {
-                dataContent = `
-                    <img src="data:image/png;base64,${resultData.data.image}" 
-                         class="screenshot-preview"
-                         onclick="showScreenshot('${resultData.data.image}')">
+            // Determine if it's a Request or Response event
+            if (data.Request) {
+                // Handle Request event
+                const request = data.Request;
+                eventDiv.className = 'event';
+                
+                const time = new Date(request.timestamp || Date.now()).toLocaleTimeString();
+                const actionType = request.action.type || "unknown";
+                
+                eventDiv.innerHTML = `
+                    <div class="event-type request">Request</div>
+                    <div class="event-time">${time}</div>
+                    <div class="event-action">${actionType}</div>
+                    <div class="event-data">ID: ${request.id}</div>
                 `;
-            } else {
-                dataContent = formatData(resultData);
+            } 
+            else if (data.Response) {
+                // Handle Response event
+                const response = data.Response;
+                eventDiv.className = `event ${response.status === 'success' ? 'success' : 'error'}`;
+                
+                const time = new Date(response.timestamp).toLocaleTimeString();
+                const actionType = response.action.type || "unknown";
+                const status = response.status || "unknown";
+                
+                let dataContent = '';
+                // Special handling for screenshot data
+                if (actionType === 'screenshot' && response.data && response.data.image) {
+                    dataContent = `
+                        <img src="data:image/png;base64,${response.data.image}" 
+                             class="screenshot-preview"
+                             onclick="showScreenshot('${response.data.image}')">
+                    `;
+                } 
+                // Special handling for cursor position data
+                else if (actionType === 'cursor_position' && response.data) {
+                    dataContent = `Position: x=${response.data.x}, y=${response.data.y}`;
+                }
+                // Error handling
+                else if (response.error) {
+                    dataContent = `Error: ${formatData(response.error)}`;
+                }
+                // Generic data output
+                else if (response.data) {
+                    dataContent = formatData(response.data);
+                }
+                
+                eventDiv.innerHTML = `
+                    <div class="event-type response">Response</div>
+                    <div class="event-time">${time}</div>
+                    <div class="event-action">${actionType}</div>
+                    <div class="event-status">${status}</div>
+                    <div class="event-data">${dataContent}</div>
+                `;
             }
-
-            eventDiv.innerHTML = `
-                <div class="event-time">${time}</div>
-                <div class="event-action">${action}</div>
-                <div class="event-status">${status}</div>
-                <div class="event-data">${dataContent}</div>
-            `;
             
-            eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
+            if (eventDiv.innerHTML) {
+                eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
+            }
         }
 
         function clearEvents() {
