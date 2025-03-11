@@ -2,10 +2,26 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 
 DEMO_CONTAINER_NAME = "valk-demo"
 IMAGE_NAME = "ghcr.io/ercbot/valk-chromium-demo:latest"
 DOCKER_DIR = "docker-examples/chromium-demo"
+
+
+def run_with_logging(cmd, **kwargs):
+    """Run a command and log any errors that occur."""
+    print(f"Running command: {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, **kwargs, stderr=subprocess.PIPE, text=True)
+        return result
+    except subprocess.CalledProcessError as e:
+        print(f"Command failed with exit code {e.returncode}")
+        if e.stderr:
+            print(f"Error output: {e.stderr}")
+        if kwargs.get("check", False):
+            raise
+        return e
 
 
 def main():
@@ -16,7 +32,8 @@ def main():
 
     if args.rebuild_cross:
         # You only need to do this if you're changing the linux dependencies
-        subprocess.run(
+        print("Building cross-compiler image...")
+        run_with_logging(
             [
                 "docker",
                 "build",
@@ -33,7 +50,8 @@ def main():
     os.chdir("valk-server")
 
     # Build the valk server
-    subprocess.run(
+    print("Building valk server...")
+    run_with_logging(
         [
             "cross",
             "build",
@@ -44,7 +62,8 @@ def main():
     )
 
     # Run the tests
-    subprocess.run(
+    print("Running tests...")
+    run_with_logging(
         [
             "cross",
             "test",
@@ -66,7 +85,8 @@ def main():
     os.chdir(DOCKER_DIR)
 
     # Build the chromium demo
-    subprocess.run(
+    print("Building Docker image...")
+    run_with_logging(
         [
             "docker",
             "build",
@@ -81,34 +101,54 @@ def main():
         return
 
     # Stop the dev container if it exists
-    subprocess.run(
-        ["docker", "stop", DEMO_CONTAINER_NAME],
-        check=True,
-    )
+    print(f"Stopping container {DEMO_CONTAINER_NAME} if it exists...")
+    try:
+        result = run_with_logging(
+            ["docker", "stop", DEMO_CONTAINER_NAME],
+            check=True,
+        )
+        print("Container stopped successfully.")
+    except subprocess.CalledProcessError:
+        print(f"Container {DEMO_CONTAINER_NAME} was not running, continuing...")
+        pass
 
     # Remove the dev container if it exists
-    subprocess.run(
-        ["docker", "rm", DEMO_CONTAINER_NAME],
-        check=True,
-    )
+    print(f"Removing container {DEMO_CONTAINER_NAME} if it exists...")
+    try:
+        result = run_with_logging(
+            ["docker", "rm", DEMO_CONTAINER_NAME],
+            check=True,
+        )
+        print("Container removed successfully.")
+    except subprocess.CalledProcessError as e:
+        # Container not found, so we don't need to remove it
+        print(
+            f"Container {DEMO_CONTAINER_NAME} doesn't exist or couldn't be removed: {e.stderr}"
+        )
+        pass
 
     # Run the dev container
-
-    subprocess.run(
-        [
-            "docker",
-            "run",
-            "-d",
-            "-p",
-            "5900:5900",  # VNC port
-            "-p",
-            "8255:8255",  # Valk server port
-            "--name",
-            DEMO_CONTAINER_NAME,
-            IMAGE_NAME,
-        ],
-        check=True,
-    )
+    print(f"Starting new container {DEMO_CONTAINER_NAME}...")
+    try:
+        run_with_logging(
+            [
+                "docker",
+                "run",
+                "-d",
+                "-p",
+                "5900:5900",  # VNC port
+                "-p",
+                "8255:8255",  # Valk server port
+                "--name",
+                DEMO_CONTAINER_NAME,
+                IMAGE_NAME,
+            ],
+            check=True,
+        )
+        print(f"Container {DEMO_CONTAINER_NAME} started successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to start container: {e.stderr}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
