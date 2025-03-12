@@ -1,6 +1,7 @@
+import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Literal, Tuple
 
 import httpx
 
@@ -29,17 +30,42 @@ class SystemInfo:
 class Computer:
     """Client for interacting with the remote computer control API"""
 
-    def __init__(self, base_url: str):
+    def __init__(
+        self,
+        base_url: str = "http://localhost:8255",  # The default base URL for the Valk server when running locally
+    ):
         """
         Initialize a remote computer connection.
         Args:
-            base_url: The base URL of the remote control API (e.g., 'http://localhost:3000')
+            base_url: The base URL of the remote control API (e.g., 'http://localhost:8255')
         """
         self._client = httpx.Client(
             base_url=base_url.rstrip("/"),
             timeout=httpx.Timeout(10.0, read=None, connect=None, write=None),
         )
         self.system_info = self.get_system_info()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
+
+    @property
+    def dimensions(self) -> Tuple[int, int]:
+        """Get the dimensions of the remote computer"""
+        # Update the system info if it's out of date
+        self.system_info = self.get_system_info()
+        return (
+            self.system_info.display_width,
+            self.system_info.display_height,
+        )
+
+    @property
+    def environment(self) -> Literal["browser", "linux", "mac", "windows"]:
+        """Get the environment of the remote computer"""
+        self.system_info = self.get_system_info()
+        return "linux"
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an action on the remote computer"""
@@ -138,7 +164,110 @@ class Computer:
         self._execute_action({"type": "key_press", "input": {"key": key}})
         return self
 
-    def start_debug_viewer(self, port=8060):
+    # OpenAI CUA Style Methods
+    def click(
+        self, x: int, y: int, button: Literal["left", "middle", "right"] = "left"
+    ) -> None:
+        """
+        Move to coordinates and click with specified button.
+
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            button: Button to click ("left", "middle", "right")
+        """
+        self.move_mouse(x, y)
+        if button == "left":
+            self.left_click()
+        elif button == "middle":
+            self.middle_click()
+        elif button == "right":
+            self.right_click()
+
+    def move(self, x: int, y: int) -> None:
+        """
+        Move mouse to specified coordinates (OpenAI style).
+
+        Args:
+            x: X coordinate
+            y: Y coordinate
+        """
+        self.move_mouse(x, y)
+
+    def scroll(self, x: int, y: int, scroll_x: int = 0, scroll_y: int = 0) -> None:
+        """
+        Scroll at the specified position.
+
+        Args:
+            x: X coordinate to position mouse before scrolling
+            y: Y coordinate to position mouse before scrolling
+            scroll_x: Amount to scroll horizontally (positive = right, negative = left)
+            scroll_y: Amount to scroll vertically (positive = down, negative = up)
+        """
+        self.move_mouse(x, y)
+
+        # We map this to key presses
+        # Vertical scrolling
+        if scroll_y > 0:  # Scroll down
+            for _ in range(abs(scroll_y)):
+                self.key("Page_Down")
+        elif scroll_y < 0:  # Scroll up
+            for _ in range(abs(scroll_y)):
+                self.key("Page_Up")
+
+        # Horizontal scrolling
+        if scroll_x > 0:  # Scroll right
+            for _ in range(abs(scroll_x)):
+                self.key("shift+Tab")
+        elif scroll_x < 0:  # Scroll left
+            for _ in range(abs(scroll_x)):
+                self.key("Tab")
+
+    def wait(self, ms: int = 1000) -> None:
+        """
+        Wait for the specified number of milliseconds.
+
+        Args:
+            ms: Milliseconds to wait
+        """
+        time.sleep(ms / 1000)
+
+    def keypress(self, keys: List[str]) -> None:
+        """
+        Press keys in combination or sequence.
+
+        Args:
+            keys: List of keys to press
+        """
+        if len(keys) == 1:
+            # Single key
+            self.key(keys[0])
+        else:
+            # Key combination
+            combo = "+".join(keys)
+            self.key(combo)
+
+    def drag(self, path: List[Dict[str, int]]) -> None:
+        """
+        Perform a drag operation following the specified path.
+
+        Args:
+            path: List of points to drag through, each a dict with 'x' and 'y' keys
+        """
+        if not path or len(path) < 2:
+            return
+
+        # Move to start position
+        start = path[0]
+        self.move_mouse(start["x"], start["y"])
+
+        # For each subsequent point, do a drag operation
+        for i in range(1, len(path)):
+            self.left_click_drag(path[i]["x"], path[i]["y"])
+
+    # Debug viewer
+
+    def start_debug_viewer(self, port=8000):
         """Start a debug viewer for the computer"""
         import http.server
         import importlib.resources
