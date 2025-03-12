@@ -117,13 +117,121 @@ VIEWER_HTML = """
             color: #155724;
             background-color: #d4edda;
         }
+        .screen-update {
+            color: #856404;
+            background-color: #fff3cd;
+        }
+        .cursor-update {
+            color: #6f42c1;
+            background-color: #e2d9f3;
+        }
+        #live-view {
+            display: flex;
+            margin: 20px 0;
+            background: white;
+            padding: 15px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #screen-container {
+            position: relative;
+            margin-right: 20px;
+            flex: 1;
+        }
+        #live-screen {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        #cursor-position {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+        #cursor-indicator {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: red;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #sidebar {
+            width: 250px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        .info-item {
+            margin-bottom: 10px;
+        }
+        .info-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .info-value {
+            color: #555;
+            word-break: break-all;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .tab {
+            padding: 8px 16px;
+            background: #e9ecef;
+            border-radius: 4px 4px 0 0;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background: white;
+            border-bottom: 2px solid #007bff;
+        }
     </style>
 </head>
 <body>
     <h1>Valk Debug Viewer</h1>
     <div id="status" class="disconnected">Disconnected</div>
-    <button class="clear-btn" onclick="clearEvents()">Clear Events</button>
-    <div id="events"></div>
+    
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('live-view')">Live View</div>
+        <div class="tab" onclick="switchTab('events-log')">Event Log</div>
+    </div>
+    
+    <div id="live-view">
+        <div id="screen-container">
+            <img id="live-screen" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=" alt="Screen">
+            <div id="cursor-position">X: 0, Y: 0</div>
+            <div id="cursor-indicator"></div>
+        </div>
+        <div id="sidebar">
+            <div class="info-item">
+                <div class="info-label">Last Update:</div>
+                <div id="last-update" class="info-value">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Resolution:</div>
+                <div id="resolution" class="info-value">-</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">Last Action:</div>
+                <div id="last-action" class="info-value">-</div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="events-log" style="display: none;">
+        <button class="clear-btn" onclick="clearEvents()">Clear Events</button>
+        <div id="events"></div>
+    </div>
+    
     <div id="screenshot-modal" class="screenshot-modal" onclick="hideScreenshot()">
         <img id="modal-image">
     </div>
@@ -134,6 +242,38 @@ VIEWER_HTML = """
         const statusDiv = document.getElementById('status');
         const modal = document.getElementById('screenshot-modal');
         const modalImg = document.getElementById('modal-image');
+        const liveScreen = document.getElementById('live-screen');
+        const cursorPosition = document.getElementById('cursor-position');
+        const cursorIndicator = document.getElementById('cursor-indicator');
+        const lastUpdateElem = document.getElementById('last-update');
+        const resolutionElem = document.getElementById('resolution');
+        const lastActionElem = document.getElementById('last-action');
+        
+        let currentCursorX = 0;
+        let currentCursorY = 0;
+        let screenWidth = 0;
+        let screenHeight = 0;
+
+        function switchTab(tabId) {
+            // Hide all tabs
+            document.getElementById('live-view').style.display = 'none';
+            document.getElementById('events-log').style.display = 'none';
+            
+            // Show selected tab
+            document.getElementById(tabId).style.display = tabId === 'live-view' ? 'flex' : 'block';
+            
+            // Update tab styling
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Find and activate the clicked tab
+            document.querySelectorAll('.tab').forEach(tab => {
+                if (tab.textContent.toLowerCase().includes(tabId.replace('-', ' '))) {
+                    tab.classList.add('active');
+                }
+            });
+        }
 
         function connect() {
             ws = new WebSocket('ws://VALK_BASE_URL/v1/monitor');
@@ -152,7 +292,7 @@ VIEWER_HTML = """
             };
             ws.onmessage = (event) => {
                 const data = JSON.parse(event.data);
-                addEvent(data);
+                processEvent(data);
             };
         }
 
@@ -170,69 +310,164 @@ VIEWER_HTML = """
         function hideScreenshot() {
             modal.style.display = 'none';
         }
-
-        function addEvent(data) {
-            const eventDiv = document.createElement('div');
+        
+        function updateCursorPosition(x, y) {
+            currentCursorX = x;
+            currentCursorY = y;
+            cursorPosition.textContent = `X: ${x}, Y: ${y}`;
             
-            // Determine if it's a Request or Response event
-            if (data.Request) {
-                // Handle Request event
-                const request = data.Request;
-                eventDiv.className = 'event';
+            // Update the visual cursor indicator position
+            // Calculate percentage position relative to screen dimensions
+            if (screenWidth > 0 && screenHeight > 0) {
+                const containerRect = document.getElementById('screen-container').getBoundingClientRect();
+                const screenRect = liveScreen.getBoundingClientRect();
                 
-                const time = new Date(request.timestamp || Date.now()).toLocaleTimeString();
-                const actionType = request.action.type || "unknown";
+                // Calculate the position within the image
+                const xPercent = x / screenWidth;
+                const yPercent = y / screenHeight;
                 
-                eventDiv.innerHTML = `
-                    <div class="event-type request">Request</div>
-                    <div class="event-time">${time}</div>
-                    <div class="event-action">${actionType}</div>
-                    <div class="event-data">ID: ${request.id}</div>
+                // Position the cursor indicator
+                cursorIndicator.style.left = `${screenRect.left - containerRect.left + (xPercent * screenRect.width)}px`;
+                cursorIndicator.style.top = `${screenRect.top - containerRect.top + (yPercent * screenRect.height)}px`;
+                cursorIndicator.style.display = 'block';
+            }
+        }
+
+        function processEvent(data) {
+            // Check event type
+            if (data.event_type === 'screen_update') {
+                // Update the live screen
+                liveScreen.src = 'data:image/png;base64,' + data.data.image;
+                
+                // Update screen dimensions
+                screenWidth = data.data.width;
+                screenHeight = data.data.height;
+                
+                // Update info sidebar
+                const timestamp = new Date(data.data.timestamp).toLocaleTimeString();
+                lastUpdateElem.textContent = timestamp;
+                resolutionElem.textContent = `${screenWidth}x${screenHeight}`;
+                
+                // Update cursor position on the new screen
+                updateCursorPosition(currentCursorX, currentCursorY);
+                
+                // Add to event log
+                addScreenUpdateEvent(data);
+            } 
+            else if (data.event_type === 'cursor_update') {
+                // Update cursor position
+                updateCursorPosition(data.data.x, data.data.y);
+                
+                // Add to event log
+                addCursorUpdateEvent(data);
+            }
+            else if (data.event_type === 'action_request') {
+                // Update last action in sidebar
+                lastActionElem.textContent = `Request: ${data.data.action.type}`;
+                
+                // Add to event log
+                addActionRequestEvent(data.data);
+            }
+            else if (data.event_type === 'action_response') {
+                // Update last action in sidebar
+                lastActionElem.textContent = `Response: ${data.data.action.type} (${data.data.status})`;
+                
+                // Add to event log
+                addActionResponseEvent(data.data);
+            }
+        }
+
+        function addScreenUpdateEvent(data) {
+            const eventDiv = document.createElement('div');
+            eventDiv.className = 'event';
+            
+            const time = new Date(data.data.timestamp).toLocaleTimeString();
+            
+            eventDiv.innerHTML = `
+                <div class="event-type screen-update">Screen</div>
+                <div class="event-time">${time}</div>
+                <div class="event-action">${data.data.width}x${data.data.height}</div>
+                <div class="event-data">
+                    <img src="data:image/png;base64,${data.data.image}" 
+                         class="screenshot-preview"
+                         onclick="showScreenshot('${data.data.image}')">
+                </div>
+            `;
+            
+            eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
+        }
+
+        function addCursorUpdateEvent(data) {
+            const eventDiv = document.createElement('div');
+            eventDiv.className = 'event';
+            
+            const time = new Date(data.data.timestamp).toLocaleTimeString();
+            
+            eventDiv.innerHTML = `
+                <div class="event-type cursor-update">Cursor</div>
+                <div class="event-time">${time}</div>
+                <div class="event-data">Position: x=${data.data.x}, y=${data.data.y}</div>
+            `;
+            
+            eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
+        }
+
+        function addActionRequestEvent(request) {
+            const eventDiv = document.createElement('div');
+            eventDiv.className = 'event';
+            
+            const time = new Date(request.timestamp || Date.now()).toLocaleTimeString();
+            const actionType = request.action.type || "unknown";
+            
+            eventDiv.innerHTML = `
+                <div class="event-type request">Request</div>
+                <div class="event-time">${time}</div>
+                <div class="event-action">${actionType}</div>
+                <div class="event-data">ID: ${request.id}</div>
+            `;
+            
+            eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
+        }
+
+        function addActionResponseEvent(response) {
+            const eventDiv = document.createElement('div');
+            eventDiv.className = `event ${response.status === 'success' ? 'success' : 'error'}`;
+            
+            const time = new Date(response.timestamp).toLocaleTimeString();
+            const actionType = response.action.type || "unknown";
+            const status = response.status || "unknown";
+            
+            let dataContent = '';
+            // Special handling for screenshot data
+            if (actionType === 'screenshot' && response.data && response.data.image) {
+                dataContent = `
+                    <img src="data:image/png;base64,${response.data.image}" 
+                         class="screenshot-preview"
+                         onclick="showScreenshot('${response.data.image}')">
                 `;
             } 
-            else if (data.Response) {
-                // Handle Response event
-                const response = data.Response;
-                eventDiv.className = `event ${response.status === 'success' ? 'success' : 'error'}`;
-                
-                const time = new Date(response.timestamp).toLocaleTimeString();
-                const actionType = response.action.type || "unknown";
-                const status = response.status || "unknown";
-                
-                let dataContent = '';
-                // Special handling for screenshot data
-                if (actionType === 'screenshot' && response.data && response.data.image) {
-                    dataContent = `
-                        <img src="data:image/png;base64,${response.data.image}" 
-                             class="screenshot-preview"
-                             onclick="showScreenshot('${response.data.image}')">
-                    `;
-                } 
-                // Special handling for cursor position data
-                else if (actionType === 'cursor_position' && response.data) {
-                    dataContent = `Position: x=${response.data.x}, y=${response.data.y}`;
-                }
-                // Error handling
-                else if (response.error) {
-                    dataContent = `Error: ${formatData(response.error)}`;
-                }
-                // Generic data output
-                else if (response.data) {
-                    dataContent = formatData(response.data);
-                }
-                
-                eventDiv.innerHTML = `
-                    <div class="event-type response">Response</div>
-                    <div class="event-time">${time}</div>
-                    <div class="event-action">${actionType}</div>
-                    <div class="event-status">${status}</div>
-                    <div class="event-data">${dataContent}</div>
-                `;
+            // Special handling for cursor position data
+            else if (actionType === 'cursor_position' && response.data) {
+                dataContent = `Position: x=${response.data.x}, y=${response.data.y}`;
+            }
+            // Error handling
+            else if (response.error) {
+                dataContent = `Error: ${formatData(response.error)}`;
+            }
+            // Generic data output
+            else if (response.data) {
+                dataContent = formatData(response.data);
             }
             
-            if (eventDiv.innerHTML) {
-                eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
-            }
+            eventDiv.innerHTML = `
+                <div class="event-type response">Response</div>
+                <div class="event-time">${time}</div>
+                <div class="event-action">${actionType}</div>
+                <div class="event-status">${status}</div>
+                <div class="event-data">${dataContent}</div>
+            `;
+            
+            eventsDiv.insertBefore(eventDiv, eventsDiv.firstChild);
         }
 
         function clearEvents() {

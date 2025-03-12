@@ -8,7 +8,6 @@ use enigo::{
     Enigo, Keyboard, Mouse, Settings,
 };
 use image::ImageFormat;
-use serde::Serialize;
 use std::env;
 use std::io::Cursor;
 use std::str::FromStr;
@@ -17,12 +16,47 @@ use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::time::{sleep, timeout, Duration};
 use xcap::Monitor;
 
+use crate::monitor::{MonitorConfig, MonitorEvent};
+
 use crate::action_types::*;
 
 const ACTION_DELAY: Duration = Duration::from_millis(500);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
+
+// Helper function for taking screenshots - can be used by both instance and static methods
+async fn take_screenshot() -> Result<(String, u32, u32), ActionError> {
+    // Screenshot delay is slightly longer
+    sleep(SCREENSHOT_DELAY).await;
+
+    Monitor::all()
+        .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
+        .and_then(|monitors| {
+            monitors
+                .first()
+                .cloned()
+                .ok_or_else(|| ActionError::ExecutionFailed("No monitor found".to_string()))
+        })
+        .and_then(|monitor| {
+            let width = monitor.width();
+            let height = monitor.height();
+
+            monitor
+                .capture_image()
+                .map_err(|_| ActionError::ExecutionFailed("Failed to capture image".to_string()))
+                .map(|image| (image, width, height))
+        })
+        .and_then(|(image, width, height)| {
+            let mut cursor = Cursor::new(Vec::new());
+            image
+                .write_to(&mut cursor, ImageFormat::Png)
+                .map_err(|_| ActionError::ExecutionFailed("Failed to encode image".to_string()))?;
+            let bytes = cursor.into_inner();
+            let base64_image = BASE64.encode(bytes);
+            Ok((base64_image, width, height))
+        })
+}
 
 pub trait InputDriver: Mouse + Keyboard + Send + 'static {}
 impl<T: Mouse + Keyboard + Send + 'static> InputDriver for T {}
@@ -32,6 +66,7 @@ pub struct ActionQueue<T: InputDriver> {
     queue: Arc<Mutex<Vec<QueueItem>>>,
     input_driver: Arc<Mutex<T>>,
     monitor_tx: broadcast::Sender<MonitorEvent>,
+    monitor_config: MonitorConfig,
 }
 
 pub type SharedQueue = Arc<ActionQueue<Enigo>>;
@@ -51,12 +86,6 @@ pub async fn create_action_queue() -> SharedQueue {
 type ActionSender = oneshot::Sender<Result<ActionOutput, ActionError>>;
 type QueueItem = (Action, ActionSender);
 
-#[derive(Clone, Serialize)]
-pub enum MonitorEvent {
-    Request(ActionRequest),
-    Response(ActionResponse),
-}
-
 // Implementation stays on the generic type
 impl<T: InputDriver> ActionQueue<T> {
     pub fn new(input_driver: T) -> Self {
@@ -64,12 +93,52 @@ impl<T: InputDriver> ActionQueue<T> {
         ActionQueue {
             queue: Arc::new(Mutex::new(Vec::new())),
             input_driver: Arc::new(Mutex::new(input_driver)),
+            monitor_config: MonitorConfig::default(),
             monitor_tx,
         }
     }
 
     pub fn subscribe_monitor(&self) -> broadcast::Receiver<MonitorEvent> {
         self.monitor_tx.subscribe()
+    }
+
+    pub fn send_action_event(&self, event: MonitorEvent) {
+        if !self.monitor_config.is_enabled(event.clone()) {
+            return;
+        }
+        let _ = self.monitor_tx.send(event);
+    }
+
+    pub async fn send_screen_update_event(&self) {
+        // Check if screen updates are enabled
+        let screen_event = MonitorEvent::ScreenUpdate {
+            image: String::new(),
+            timestamp: 0,
+            width: 0,
+            height: 0,
+        };
+
+        if !self.monitor_config.is_enabled(screen_event) {
+            return;
+        }
+
+        // Take screenshot using the shared function
+        if let Ok((image, width, height)) = take_screenshot().await {
+            let event = MonitorEvent::ScreenUpdate {
+                image,
+                timestamp: chrono::Utc::now().timestamp_millis(),
+                width,
+                height,
+            };
+            let _ = self.monitor_tx.send(event);
+        }
+    }
+
+    pub fn send_cursor_update_event(&self, event: MonitorEvent) {
+        if !self.monitor_config.is_enabled(event.clone()) {
+            return;
+        }
+        let _ = self.monitor_tx.send(event);
     }
 
     // Add an action to the queue
@@ -85,7 +154,8 @@ impl<T: InputDriver> ActionQueue<T> {
 
     pub async fn execute_action(&self, request: ActionRequest) -> ActionResponse {
         // Send request event
-        let _ = self.monitor_tx.send(MonitorEvent::Request(request.clone()));
+        let event = MonitorEvent::ActionRequest(request.clone());
+        self.send_action_event(event);
 
         let rx = self.queue_action(request.action.clone()).await;
 
@@ -93,11 +163,14 @@ impl<T: InputDriver> ActionQueue<T> {
             Ok(result) => match result {
                 Ok(Ok(output)) => ActionResponse::success(request.id, request.action, output),
                 Ok(Err(error)) => ActionResponse::error(request.id, request.action, error),
-                Err(e) => ActionResponse::error(
-                    request.id,
-                    request.action,
-                    ActionError::ChannelError(e.to_string()),
-                ),
+                Err(_e) => {
+                    // Timeout occurred - remove action from queue if it's still there
+                    let mut queue = self.queue.lock().await;
+                    queue.retain(|(a, _)| {
+                        !std::mem::discriminant(a).eq(&std::mem::discriminant(&request.action))
+                    });
+                    ActionResponse::error(request.id, request.action, ActionError::Timeout)
+                }
             },
             Err(_) => {
                 // Timeout occurred - remove action from queue if it's still there
@@ -110,9 +183,11 @@ impl<T: InputDriver> ActionQueue<T> {
         };
 
         // Send response event
-        let _ = self
-            .monitor_tx
-            .send(MonitorEvent::Response(response.clone()));
+        let response_event = MonitorEvent::ActionResponse(response.clone());
+        self.send_action_event(response_event);
+
+        // Send screen update event
+        self.send_screen_update_event().await;
 
         response
     }
@@ -342,32 +417,10 @@ impl<T: InputDriver> ActionQueue<T> {
                 Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
             },
             Action::Screenshot => {
-                // Screenshot delay is slightly longer
-                sleep(SCREENSHOT_DELAY).await;
-
-                Monitor::all()
-                    .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
-                    .and_then(|monitors| {
-                        monitors.first().cloned().ok_or_else(|| {
-                            ActionError::ExecutionFailed("No monitor found".to_string())
-                        })
-                    })
-                    .and_then(|monitor| {
-                        monitor.capture_image().map_err(|_| {
-                            ActionError::ExecutionFailed("Failed to capture image".to_string())
-                        })
-                    })
-                    .and_then(|image| {
-                        let mut cursor = Cursor::new(Vec::new());
-                        image.write_to(&mut cursor, ImageFormat::Png).map_err(|_| {
-                            ActionError::ExecutionFailed("Failed to encode image".to_string())
-                        })?;
-                        let bytes = cursor.into_inner();
-                        let base64_image = BASE64.encode(bytes);
-                        Ok(ActionOutput::Screenshot {
-                            image: base64_image,
-                        })
-                    })
+                // Use the shared screenshot function
+                take_screenshot()
+                    .await
+                    .map(|(image, _, _)| ActionOutput::Screenshot { image })
             }
         }
     }

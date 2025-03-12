@@ -47,7 +47,7 @@ pub struct KeyPressInput {
 
 /// Output data produced by actions that return information
 /// Only certain actions (Screenshot, CursorPosition) produce output
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ActionOutput {
     Screenshot { image: String },
@@ -56,7 +56,7 @@ pub enum ActionOutput {
 }
 
 /// Represents possible errors that can occur during action execution
-#[derive(Debug, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub enum ActionError {
     /// Action took too long to complete
     Timeout,
@@ -67,8 +67,6 @@ pub enum ActionError {
     /// Internal queue communication error
     ChannelError(String),
 }
-
-// Custom serialization implementation for ActionError
 
 // Custom serialization implementation for ActionError
 impl serde::Serialize for ActionError {
@@ -102,7 +100,7 @@ pub struct ActionRequest {
     pub action: Action,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionResponseStatus {
     Success,
@@ -111,7 +109,7 @@ pub enum ActionResponseStatus {
 
 /// Outgoing message containing the result of an action
 /// Includes request tracking, timing, status, and any output or error information
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActionResponse {
     pub id: Uuid,
     pub request_id: String,
