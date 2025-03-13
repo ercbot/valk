@@ -186,9 +186,6 @@ impl<T: InputDriver> ActionQueue<T> {
         let response_event = MonitorEvent::ActionResponse(response.clone());
         self.send_action_event(response_event);
 
-        // Send screen update event
-        self.send_screen_update_event().await;
-
         response
     }
 
