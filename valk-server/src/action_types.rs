@@ -47,6 +47,8 @@ pub struct KeyPressInput {
 
 /// Output data produced by actions that return information
 /// Only certain actions (Screenshot, CursorPosition) produce output
+/// NoData ActionOutput is used for actions that don't produce output instead of None
+/// This is to make dealing with optional parameters easier
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ActionOutput {
@@ -109,7 +111,8 @@ pub enum ActionResponseStatus {
 
 /// Outgoing message containing the result of an action
 /// Includes request tracking, timing, status, and any output or error information
-#[derive(Debug, Serialize, Deserialize, Clone)]
+// Base action response type - for websocket monitoring
+#[derive(Debug, Serialize, Clone)]
 pub struct ActionResponse {
     pub id: Uuid,
     pub request_id: String,
@@ -150,8 +153,24 @@ impl ActionResponse {
             timestamp: Utc::now(),
             status: ActionResponseStatus::Error,
             action,
-            data: None,
             error: Some(error),
+            data: None,
+        }
+    }
+
+    /// Extracts the base response without data
+    pub fn without_data(&self) -> ActionResponse {
+        let mut self_clone = self.clone();
+        self_clone.data = None;
+        self_clone
+    }
+
+    /// Extracts screenshot/cursor data if present
+    pub fn extract_data(&self) -> ActionOutput {
+        if let Some(data) = &self.data {
+            data.clone()
+        } else {
+            ActionOutput::NoData
         }
     }
 }

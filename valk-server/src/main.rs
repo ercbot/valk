@@ -18,7 +18,6 @@ mod action_types;
 mod config;
 mod key_press;
 mod monitor;
-
 use action_queue::{create_action_queue, SharedQueue};
 use action_types::{ActionError, ActionRequest, ActionResponse, ActionResponseStatus};
 use config::Config;
