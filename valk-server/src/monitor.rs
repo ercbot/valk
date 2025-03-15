@@ -28,6 +28,7 @@ pub struct MonitorEvent {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(tag = "event_type", content = "data")]
 pub enum MonitorEventPayload {
     #[serde(rename = "action_request")]
     ActionRequest(crate::action_types::ActionRequest),
@@ -37,6 +38,7 @@ pub enum MonitorEventPayload {
     ScreenUpdate {
         action_id: String, // ID of the action that triggered this screenshot
         image: String,     // Base64 encoded image
+        screen_size: (u32, u32),
         timestamp: DateTime<Utc>,
     },
     #[serde(rename = "cursor_update")]

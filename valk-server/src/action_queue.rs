@@ -27,11 +27,29 @@ const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
 
+// Helper function to just get the screen size without taking a screenshot
+async fn get_screen_size() -> Result<(u32, u32), ActionError> {
+    Monitor::all()
+        .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
+        .and_then(|monitors| {
+            monitors
+                .first()
+                .cloned()
+                .ok_or_else(|| ActionError::ExecutionFailed("No monitor found".to_string()))
+        })
+        .map(|monitor| {
+            let width = monitor.width();
+            let height = monitor.height();
+            (width, height)
+        })
+}
+
 // Helper function for taking screenshots - can be used by both instance and static methods
 async fn take_screenshot() -> Result<String, ActionError> {
     // Screenshot delay is slightly longer
     sleep(SCREENSHOT_DELAY).await;
 
+    // Capture the image
     Monitor::all()
         .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
         .and_then(|monitors| {
@@ -44,7 +62,6 @@ async fn take_screenshot() -> Result<String, ActionError> {
             monitor
                 .capture_image()
                 .map_err(|_| ActionError::ExecutionFailed("Failed to capture image".to_string()))
-                .map(|image| image)
         })
         .and_then(|image| {
             let mut cursor = Cursor::new(Vec::new());
@@ -112,10 +129,15 @@ impl<T: InputDriver> ActionQueue<T> {
 
     pub async fn send_screen_update(&self, action_id: String) {
         if self.monitor_config.always_send_screen_updates {
+            // First get a screenshot
             if let Ok(image_data) = take_screenshot().await {
+                // Then get the screen size separately
+                let screen_size = get_screen_size().await.unwrap_or((1920, 1080));
+
                 self.send_monitor_event(MonitorEventPayload::ScreenUpdate {
                     action_id,
                     image: image_data,
+                    screen_size,
                     timestamp: Utc::now(),
                 });
             }
@@ -124,10 +146,16 @@ impl<T: InputDriver> ActionQueue<T> {
 
     pub async fn send_cursor_update(&self, action_id: String) {
         if self.monitor_config.always_send_cursor_updates {
+            // Get the current cursor position
+            let (x, y) = match self.input_driver.lock().await.location() {
+                Ok((x, y)) => (x as u32, y as u32),
+                Err(_) => (0, 0), // Default to 0,0 if we can't get the position
+            };
+
             self.send_monitor_event(MonitorEventPayload::CursorUpdate {
                 action_id,
-                x: 0,
-                y: 0,
+                x,
+                y,
                 timestamp: Utc::now(),
             });
         }
@@ -182,30 +210,32 @@ impl<T: InputDriver> ActionQueue<T> {
         self.send_monitor_event(MonitorEventPayload::ActionResponse(response.without_data()));
 
         // Step 2: Handle screenshots/cursor updates for monitoring
-        if matches!(request.action, Action::Screenshot | Action::CursorPosition) {
-            match response.extract_data() {
-                ActionOutput::Screenshot { image } => {
-                    // Send screenshot event
-                    self.send_monitor_event(MonitorEventPayload::ScreenUpdate {
-                        action_id: request.id.clone(),
-                        image,
-                        timestamp: Utc::now(),
-                    });
-                    self.send_cursor_update(request.id.clone()).await;
-                }
-                ActionOutput::CursorPosition { x, y } => {
-                    self.send_monitor_event(MonitorEventPayload::CursorUpdate {
-                        action_id: request.id.clone(),
-                        x,
-                        y,
-                        timestamp: Utc::now(),
-                    });
-                    self.send_screen_update(request.id.clone()).await;
-                }
-                ActionOutput::NoData => {
-                    self.send_screen_update(request.id.clone()).await;
-                    self.send_cursor_update(request.id.clone()).await;
-                }
+        match response.extract_data() {
+            ActionOutput::Screenshot { image } => {
+                // Get screen size for the update
+                let screen_size = get_screen_size().await.unwrap_or((1920, 1080));
+
+                // Send screenshot event
+                self.send_monitor_event(MonitorEventPayload::ScreenUpdate {
+                    action_id: request.id.clone(),
+                    image,
+                    screen_size,
+                    timestamp: Utc::now(),
+                });
+                self.send_cursor_update(request.id.clone()).await;
+            }
+            ActionOutput::CursorPosition { x, y } => {
+                self.send_monitor_event(MonitorEventPayload::CursorUpdate {
+                    action_id: request.id.clone(),
+                    x,
+                    y,
+                    timestamp: Utc::now(),
+                });
+                self.send_screen_update(request.id.clone()).await;
+            }
+            ActionOutput::NoData => {
+                self.send_screen_update(request.id.clone()).await;
+                self.send_cursor_update(request.id.clone()).await;
             }
         }
         // Step 3: Return the full response (with data) to the HTTP client
