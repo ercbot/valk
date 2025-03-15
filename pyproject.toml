@@ -33,6 +33,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["valk"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"valk/static/viewer.html" = "valk/static/viewer.html"
+
 [dependency-groups]
 dev = [
     "ruff>=0.9.4",
