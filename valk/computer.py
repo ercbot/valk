@@ -2,12 +2,9 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
 
-
 import httpx
 
 from .errors import ValkAPIError
-
-import logging
 
 
 @dataclass
