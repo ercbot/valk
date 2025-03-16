@@ -1,5 +1,6 @@
 use crate::key_press::KeyPress;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use chrono::Utc;
 use enigo::InputError;
 use enigo::{
     Button,
@@ -8,14 +9,16 @@ use enigo::{
     Enigo, Keyboard, Mouse, Settings,
 };
 use image::ImageFormat;
-use serde::Serialize;
 use std::env;
 use std::io::Cursor;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::time::{sleep, timeout, Duration};
+use uuid::Uuid;
 use xcap::Monitor;
+
+use crate::monitor::{MonitorConfig, MonitorEvent, MonitorEventPayload};
 
 use crate::action_types::*;
 
@@ -23,6 +26,53 @@ const ACTION_DELAY: Duration = Duration::from_millis(500);
 const ACTION_TIMEOUT: Duration = Duration::from_secs(10);
 const SCREENSHOT_DELAY: Duration = Duration::from_secs(2);
 const DOUBLE_CLICK_DELAY: Duration = Duration::from_millis(100);
+
+// Helper function to just get the screen size without taking a screenshot
+async fn get_screen_size() -> Result<(u32, u32), ActionError> {
+    Monitor::all()
+        .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
+        .and_then(|monitors| {
+            monitors
+                .first()
+                .cloned()
+                .ok_or_else(|| ActionError::ExecutionFailed("No monitor found".to_string()))
+        })
+        .map(|monitor| {
+            let width = monitor.width();
+            let height = monitor.height();
+            (width, height)
+        })
+}
+
+// Helper function for taking screenshots - can be used by both instance and static methods
+async fn take_screenshot() -> Result<String, ActionError> {
+    // Screenshot delay is slightly longer
+    sleep(SCREENSHOT_DELAY).await;
+
+    // Capture the image
+    Monitor::all()
+        .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
+        .and_then(|monitors| {
+            monitors
+                .first()
+                .cloned()
+                .ok_or_else(|| ActionError::ExecutionFailed("No monitor found".to_string()))
+        })
+        .and_then(|monitor| {
+            monitor
+                .capture_image()
+                .map_err(|_| ActionError::ExecutionFailed("Failed to capture image".to_string()))
+        })
+        .and_then(|image| {
+            let mut cursor = Cursor::new(Vec::new());
+            image
+                .write_to(&mut cursor, ImageFormat::Png)
+                .map_err(|_| ActionError::ExecutionFailed("Failed to encode image".to_string()))?;
+            let bytes = cursor.into_inner();
+            let base64_image = BASE64.encode(bytes);
+            Ok(base64_image)
+        })
+}
 
 pub trait InputDriver: Mouse + Keyboard + Send + 'static {}
 impl<T: Mouse + Keyboard + Send + 'static> InputDriver for T {}
@@ -32,6 +82,7 @@ pub struct ActionQueue<T: InputDriver> {
     queue: Arc<Mutex<Vec<QueueItem>>>,
     input_driver: Arc<Mutex<T>>,
     monitor_tx: broadcast::Sender<MonitorEvent>,
+    monitor_config: MonitorConfig,
 }
 
 pub type SharedQueue = Arc<ActionQueue<Enigo>>;
@@ -51,12 +102,6 @@ pub async fn create_action_queue() -> SharedQueue {
 type ActionSender = oneshot::Sender<Result<ActionOutput, ActionError>>;
 type QueueItem = (Action, ActionSender);
 
-#[derive(Clone, Serialize)]
-pub enum MonitorEvent {
-    Request(ActionRequest),
-    Response(ActionResponse),
-}
-
 // Implementation stays on the generic type
 impl<T: InputDriver> ActionQueue<T> {
     pub fn new(input_driver: T) -> Self {
@@ -64,12 +109,56 @@ impl<T: InputDriver> ActionQueue<T> {
         ActionQueue {
             queue: Arc::new(Mutex::new(Vec::new())),
             input_driver: Arc::new(Mutex::new(input_driver)),
+            monitor_config: MonitorConfig::default(), // TODO: Make this configurable
             monitor_tx,
         }
     }
 
     pub fn subscribe_monitor(&self) -> broadcast::Receiver<MonitorEvent> {
         self.monitor_tx.subscribe()
+    }
+
+    // Send an event to the monitors
+    pub fn send_monitor_event(&self, payload: MonitorEventPayload) {
+        let event = MonitorEvent {
+            event_id: Uuid::new_v4().to_string(),
+            payload,
+        };
+        let _ = self.monitor_tx.send(event);
+    }
+
+    pub async fn send_screen_update(&self, action_id: String) {
+        if self.monitor_config.always_send_screen_updates {
+            // First get a screenshot
+            if let Ok(image_data) = take_screenshot().await {
+                // Then get the screen size separately
+                let screen_size = get_screen_size().await.unwrap_or((1920, 1080));
+
+                self.send_monitor_event(MonitorEventPayload::ScreenUpdate {
+                    action_id,
+                    image: image_data,
+                    screen_size,
+                    timestamp: Utc::now(),
+                });
+            }
+        }
+    }
+
+    pub async fn send_cursor_update(&self, action_id: String) {
+        if self.monitor_config.always_send_cursor_updates {
+            // Get the current cursor position
+            let (x, y) = match self.input_driver.lock().await.location() {
+                Ok((x, y)) => (x as u32, y as u32),
+                Err(_) => (0, 0), // Default to 0,0 if we can't get the position
+            };
+
+            self.send_monitor_event(MonitorEventPayload::CursorUpdate {
+                action_id,
+                x,
+                y,
+                timestamp: Utc::now(),
+            });
+        }
     }
 
     // Add an action to the queue
@@ -85,17 +174,21 @@ impl<T: InputDriver> ActionQueue<T> {
 
     pub async fn execute_action(&self, request: ActionRequest) -> ActionResponse {
         // Send request event
-        let _ = self.monitor_tx.send(MonitorEvent::Request(request.clone()));
+        self.send_monitor_event(MonitorEventPayload::ActionRequest(request.clone()));
 
+        // Process the action
         let rx = self.queue_action(request.action.clone()).await;
-
         let response = match timeout(ACTION_TIMEOUT, rx).await {
             Ok(result) => match result {
-                Ok(Ok(output)) => ActionResponse::success(request.id, request.action, output),
-                Ok(Err(error)) => ActionResponse::error(request.id, request.action, error),
+                Ok(Ok(output)) => {
+                    ActionResponse::success(request.id.clone(), request.action.clone(), output)
+                }
+                Ok(Err(error)) => {
+                    ActionResponse::error(request.id.clone(), request.action.clone(), error)
+                }
                 Err(e) => ActionResponse::error(
-                    request.id,
-                    request.action,
+                    request.id.clone(),
+                    request.action.clone(),
                     ActionError::ChannelError(e.to_string()),
                 ),
             },
@@ -105,15 +198,47 @@ impl<T: InputDriver> ActionQueue<T> {
                 queue.retain(|(a, _)| {
                     !std::mem::discriminant(a).eq(&std::mem::discriminant(&request.action))
                 });
-                ActionResponse::error(request.id, request.action, ActionError::Timeout)
+                ActionResponse::error(
+                    request.id.clone(),
+                    request.action.clone(),
+                    ActionError::Timeout,
+                )
             }
         };
 
-        // Send response event
-        let _ = self
-            .monitor_tx
-            .send(MonitorEvent::Response(response.clone()));
+        // Step 1: Send the base response (without data) to the monitor
+        self.send_monitor_event(MonitorEventPayload::ActionResponse(response.without_data()));
 
+        // Step 2: Handle screenshots/cursor updates for monitoring
+        match response.extract_data() {
+            ActionOutput::Screenshot { image } => {
+                // Get screen size for the update
+                let screen_size = get_screen_size().await.unwrap_or((1920, 1080));
+
+                // Send screenshot event
+                self.send_monitor_event(MonitorEventPayload::ScreenUpdate {
+                    action_id: request.id.clone(),
+                    image,
+                    screen_size,
+                    timestamp: Utc::now(),
+                });
+                self.send_cursor_update(request.id.clone()).await;
+            }
+            ActionOutput::CursorPosition { x, y } => {
+                self.send_monitor_event(MonitorEventPayload::CursorUpdate {
+                    action_id: request.id.clone(),
+                    x,
+                    y,
+                    timestamp: Utc::now(),
+                });
+                self.send_screen_update(request.id.clone()).await;
+            }
+            ActionOutput::NoData => {
+                self.send_screen_update(request.id.clone()).await;
+                self.send_cursor_update(request.id.clone()).await;
+            }
+        }
+        // Step 3: Return the full response (with data) to the HTTP client
         response
     }
 
@@ -342,32 +467,10 @@ impl<T: InputDriver> ActionQueue<T> {
                 Err(e) => Err(ActionError::ExecutionFailed(e.to_string())),
             },
             Action::Screenshot => {
-                // Screenshot delay is slightly longer
-                sleep(SCREENSHOT_DELAY).await;
-
-                Monitor::all()
-                    .map_err(|_| ActionError::ExecutionFailed("Failed to get monitors".to_string()))
-                    .and_then(|monitors| {
-                        monitors.first().cloned().ok_or_else(|| {
-                            ActionError::ExecutionFailed("No monitor found".to_string())
-                        })
-                    })
-                    .and_then(|monitor| {
-                        monitor.capture_image().map_err(|_| {
-                            ActionError::ExecutionFailed("Failed to capture image".to_string())
-                        })
-                    })
-                    .and_then(|image| {
-                        let mut cursor = Cursor::new(Vec::new());
-                        image.write_to(&mut cursor, ImageFormat::Png).map_err(|_| {
-                            ActionError::ExecutionFailed("Failed to encode image".to_string())
-                        })?;
-                        let bytes = cursor.into_inner();
-                        let base64_image = BASE64.encode(bytes);
-                        Ok(ActionOutput::Screenshot {
-                            image: base64_image,
-                        })
-                    })
+                // Use the shared screenshot function
+                take_screenshot()
+                    .await
+                    .map(|image| ActionOutput::Screenshot { image })
             }
         }
     }

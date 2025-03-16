@@ -2,6 +2,8 @@ from dataclasses import dataclass, fields, replace
 from enum import Enum
 from typing import Literal, NamedTuple, TypedDict
 
+from valk.computer import Computer
+
 
 class Resolution(NamedTuple):
     width: int
@@ -84,7 +86,7 @@ class ComputerTool:
     display_num: int | None
     _scaling_enabled: bool = True  # Enable/disable coordinate scaling
 
-    def __init__(self, computer):
+    def __init__(self, computer: Computer):
         self.computer = computer
         self.width = computer.system_info.display_width
         self.height = computer.system_info.display_height

@@ -4,7 +4,6 @@ from typing import Any, Dict, Tuple
 
 import httpx
 
-from .debug_viewer import VIEWER_HTML
 from .errors import ValkAPIError
 
 
@@ -36,7 +35,10 @@ class Computer:
         Args:
             base_url: The base URL of the remote control API (e.g., 'http://localhost:3000')
         """
-        self._client = httpx.Client(base_url=base_url.rstrip("/"))
+        self._client = httpx.Client(
+            base_url=base_url.rstrip("/"),
+            timeout=httpx.Timeout(10.0, read=None, connect=None, write=None),
+        )
         self.system_info = self.get_system_info()
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
@@ -136,41 +138,63 @@ class Computer:
         self._execute_action({"type": "key_press", "input": {"key": key}})
         return self
 
-    def start_debug_viewer(self, port=8000):
+    def start_debug_viewer(self, port=8060):
         """Start a debug viewer for the computer"""
         import http.server
+        import importlib.resources
+        import socket
         import threading
+        import time
+        import urllib.parse
         import webbrowser
-        from pathlib import Path
 
-        # Write the HTML file
-        file_name = "valk_viewer.html"
-        viewer_path = Path(file_name)
-        viewer_path.write_text(
-            VIEWER_HTML.replace(
-                "VALK_BASE_URL", str(self._client.base_url).lstrip("http://")
-            )
-        )
+        # Load the Valk viewer html
+        static_path = importlib.resources.files("valk.static")
+        viewer_path = static_path / "viewer.html"
+        with open(viewer_path, "rb") as f:
+            html_content = f.read()
 
-        # Start a simple HTTP server
-        class Handler(http.server.SimpleHTTPRequestHandler):
-            def end_headers(self):
-                # Add CORS headers
+        class SimpleHandler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                nonlocal html_content
+
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.send_header("Content-Length", str(len(html_content)))
                 self.send_header("Access-Control-Allow-Origin", "*")
-                super().end_headers()
+                self.end_headers()
+                self.wfile.write(html_content)
 
+            # Override to avoid printing
             def log_message(self, format, *args):
-                # Override to suppress logging
                 pass
 
-        httpd = http.server.HTTPServer(("localhost", port), Handler)
+        # Check if the port is already in use
+        def is_port_in_use(port):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                return s.connect_ex(("localhost", port)) == 0
 
-        # Start server in a thread
-        thread = threading.Thread(target=httpd.serve_forever)
-        thread.daemon = True
-        thread.start()
+        if is_port_in_use(port):
+            raise RuntimeError(f"Port {port} is already in use")
+
+        # Create and start the server
+        httpd = http.server.HTTPServer(("localhost", port), SimpleHandler)
+
+        # Run server in a thread
+        server_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        server_thread.start()
 
         # Open browser
-        webbrowser.open(f"http://localhost:{port}/{file_name}")
+        valk_url = urllib.parse.quote(
+            str(self._client.base_url)
+            .replace("http://", "")
+            .replace("https://", "")
+            .replace("ws://", "")
+            .replace("wss://", "")
+        )
+        viewer_url = f"http://localhost:{port}/?valkUrl={valk_url}"
+        webbrowser.open(viewer_url)
 
-        print(f"Debug viewer started at http://localhost:{port}/{file_name}")
+        print(f"Debug viewer started at {viewer_url}")
+
+        return server_thread

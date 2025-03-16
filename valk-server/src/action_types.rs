@@ -47,7 +47,9 @@ pub struct KeyPressInput {
 
 /// Output data produced by actions that return information
 /// Only certain actions (Screenshot, CursorPosition) produce output
-#[derive(Debug, Serialize, Clone)]
+/// NoData ActionOutput is used for actions that don't produce output instead of None
+/// This is to make dealing with optional parameters easier
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(untagged)]
 pub enum ActionOutput {
     Screenshot { image: String },
@@ -56,7 +58,7 @@ pub enum ActionOutput {
 }
 
 /// Represents possible errors that can occur during action execution
-#[derive(Debug, Clone)]
+#[derive(Debug, Deserialize, Clone)]
 pub enum ActionError {
     /// Action took too long to complete
     Timeout,
@@ -67,8 +69,6 @@ pub enum ActionError {
     /// Internal queue communication error
     ChannelError(String),
 }
-
-// Custom serialization implementation for ActionError
 
 // Custom serialization implementation for ActionError
 impl serde::Serialize for ActionError {
@@ -102,7 +102,7 @@ pub struct ActionRequest {
     pub action: Action,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionResponseStatus {
     Success,
@@ -111,6 +111,7 @@ pub enum ActionResponseStatus {
 
 /// Outgoing message containing the result of an action
 /// Includes request tracking, timing, status, and any output or error information
+// Base action response type - for websocket monitoring
 #[derive(Debug, Serialize, Clone)]
 pub struct ActionResponse {
     pub id: Uuid,
@@ -152,8 +153,24 @@ impl ActionResponse {
             timestamp: Utc::now(),
             status: ActionResponseStatus::Error,
             action,
-            data: None,
             error: Some(error),
+            data: None,
+        }
+    }
+
+    /// Extracts the base response without data
+    pub fn without_data(&self) -> ActionResponse {
+        let mut self_clone = self.clone();
+        self_clone.data = None;
+        self_clone
+    }
+
+    /// Extracts screenshot/cursor data if present
+    pub fn extract_data(&self) -> ActionOutput {
+        if let Some(data) = &self.data {
+            data.clone()
+        } else {
+            ActionOutput::NoData
         }
     }
 }

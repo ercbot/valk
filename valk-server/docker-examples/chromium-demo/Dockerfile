@@ -1,6 +1,5 @@
 # Stage 1: Base image with system dependencies
 FROM debian:bullseye-slim AS base
-
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies including Xvfb, Chromium, and X11/XCB libraries
@@ -62,6 +61,9 @@ FROM base
 
 # Setup virtual display
 ENV DISPLAY=:99
+ENV DISPLAY_WIDTH=1280
+ENV DISPLAY_HEIGHT=800
+ENV DISPLAY_DEPTH=24
 
 # VNC port
 EXPOSE 5900

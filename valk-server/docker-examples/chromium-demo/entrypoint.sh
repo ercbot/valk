@@ -25,7 +25,7 @@ log "IBus daemon started with PID: $IBUS_PID"
 
 # Start Xvfb
 log "Starting Xvfb..."
-Xvfb $DISPLAY -screen 0 1920x1080x24 &
+Xvfb $DISPLAY -screen 0 ${DISPLAY_WIDTH}x${DISPLAY_HEIGHT}x${DISPLAY_DEPTH} &
 XVFB_PID=$!
 log "Xvfb started with PID: $XVFB_PID"
 
@@ -38,7 +38,7 @@ log "X server wait complete"
 log "Starting Chromium..."
 chromium --no-sandbox \
     --no-first-run \
-    --window-size=1920,1080 \
+    --window-size=$DISPLAY_WIDTH,$DISPLAY_HEIGHT \
     --window-position=0,0 \
     --start-maximized \
     --disable-gpu \

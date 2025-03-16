@@ -1,15 +1,63 @@
 use axum::{
     extract::{
         self,
-        ws::{Utf8Bytes, WebSocket, WebSocketUpgrade},
+        ws::{Message, Utf8Bytes, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
 };
+use chrono::{DateTime, Utc};
 
 use crate::action_queue::SharedQueue;
 use crate::AppState;
 
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+// Configuration for the monitor connection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MonitorConfig {
+    // Enable/disable different event types
+    pub always_send_screen_updates: bool,
+    pub always_send_cursor_updates: bool,
+}
+
+#[derive(Clone, Serialize)]
+pub struct MonitorEvent {
+    pub event_id: String,
+    #[serde(flatten)]
+    pub payload: MonitorEventPayload,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(tag = "event_type", content = "data")]
+pub enum MonitorEventPayload {
+    #[serde(rename = "action_request")]
+    ActionRequest(crate::action_types::ActionRequest),
+    #[serde(rename = "action_response")]
+    ActionResponse(crate::action_types::ActionResponse),
+    #[serde(rename = "screen_update")]
+    ScreenUpdate {
+        action_id: String, // ID of the action that triggered this screenshot
+        image: String,     // Base64 encoded image
+        screen_size: (u32, u32),
+        timestamp: DateTime<Utc>,
+    },
+    #[serde(rename = "cursor_update")]
+    CursorUpdate {
+        action_id: String, // ID of the action that triggered this cursor update
+        x: u32,
+        y: u32,
+        timestamp: DateTime<Utc>,
+    },
+}
+
+impl Default for MonitorConfig {
+    fn default() -> Self {
+        Self {
+            always_send_screen_updates: true,
+            always_send_cursor_updates: true,
+        }
+    }
+}
 
 pub async fn monitor_websocket(
     ws: WebSocketUpgrade,
@@ -19,17 +67,40 @@ pub async fn monitor_websocket(
 }
 
 async fn handle_socket(mut socket: WebSocket, queue: SharedQueue) {
-    let mut rx = queue.subscribe_monitor();
+    // Subscribe to events from the action queue
+    let mut action_rx = queue.subscribe_monitor();
 
-    while let Ok(event) = rx.recv().await {
-        if let Ok(msg) = serde_json::to_string(&event) {
-            if socket
-                .send(axum::extract::ws::Message::Text(Utf8Bytes::from(msg)))
-                .await
-                .is_err()
-            {
-                break; // Client disconnected
-            }
+    loop {
+        tokio::select! {
+            // Handle messages from client
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Text(_text))) => {
+                        // Just send confirmation
+                        let _ = socket.send(Message::Text(Utf8Bytes::from(
+                            r#"{"status":"message_received"}"#
+                        ))).await;
+                    },
+                    Some(Ok(_)) => {
+                        // Ignore other message types
+                    },
+                    Some(Err(_)) | None => {
+                        // Client disconnected
+                        break;
+                    }
+                }
+            },
+
+            // Handle action events
+            action_event = action_rx.recv() => {
+                if let Ok(event) = action_event {
+                    if let Ok(msg) = serde_json::to_string(&event) {
+                        if socket.send(Message::Text(Utf8Bytes::from(msg))).await.is_err() {
+                            break; // Client disconnected
+                        }
+                    }
+                }
+            },
         }
     }
 }
