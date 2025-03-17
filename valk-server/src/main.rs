@@ -5,7 +5,6 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
-use serde::Serialize;
 use std::time::Duration;
 
 use std::sync::Arc;
@@ -18,47 +17,16 @@ mod action_types;
 mod config;
 mod key_press;
 mod monitor;
+mod system_info;
+
 use action_queue::{create_action_queue, SharedQueue};
 use action_types::{ActionError, ActionRequest, ActionResponse, ActionResponseStatus};
 use config::Config;
 use monitor::monitor_websocket;
+use system_info::system_info;
 
 async fn root() -> &'static str {
     "Valk is running"
-}
-
-#[derive(Debug, Serialize)]
-struct ComputerInfo {
-    os_type: String,
-    os_version: String,
-    display_width: u32,
-    display_height: u32,
-}
-
-/// Get information about the computer system
-async fn system_info() -> Result<Json<ComputerInfo>, (StatusCode, String)> {
-    let monitor = xcap::Monitor::all()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to get display info: {}", e),
-            )
-        })?
-        .first()
-        .cloned()
-        .ok_or((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "No monitor found".to_string(),
-        ))?;
-
-    let os_info = os_info::get();
-
-    Ok(Json(ComputerInfo {
-        os_type: os_info.os_type().to_string(),
-        os_version: os_info.version().to_string(),
-        display_width: monitor.width(),
-        display_height: monitor.height(),
-    }))
 }
 
 /// A single RCP style action request.
