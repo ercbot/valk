@@ -13,10 +13,6 @@ def create_response(**kwargs):
         "Content-Type": "application/json",
     }
 
-    openai_org = os.getenv("OPENAI_ORG")
-    if openai_org:
-        headers["Openai-Organization"] = openai_org
-
     response = requests.post(url, headers=headers, json=kwargs)
 
     if response.status_code != 200:
@@ -74,7 +70,7 @@ def main():
     with Computer() as computer:
         tools = [
             {
-                "type": "computer-preview",
+                "type": "computer_use_preview",
                 "display_width": computer.dimensions[0],
                 "display_height": computer.dimensions[1],
                 "environment": computer.environment,
@@ -88,7 +84,7 @@ def main():
 
             while True:  # keep looping until we get a final response
                 response = create_response(
-                    model="computer-use-preview-2025-02-04",
+                    model="computer-use-preview",
                     input=items,
                     tools=tools,
                     truncation="auto",

@@ -62,10 +62,17 @@ class Computer:
         )
 
     @property
-    def environment(self) -> Literal["browser", "linux", "mac", "windows"]:
+    def environment(self) -> Literal["linux", "mac", "windows"]:
         """Get the environment of the remote computer"""
         self.system_info = self.get_system_info()
-        return "linux"
+
+        if self.system_info.os_type == "Windows":
+            return "windows"
+        elif self.system_info.os_type == "Mac":
+            return "mac"
+        else:
+            # All other OS types are treated as linux
+            return "linux"
 
     def _execute_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
         """Execute an action on the remote computer"""
