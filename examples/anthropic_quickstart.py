@@ -1,10 +1,3 @@
-# /// script
-# requires-python = ">=3.12"
-# dependencies = [
-#     "anthropic",
-#     "valk",
-# ]
-# ///
 import os
 
 import anthropic
@@ -19,6 +12,9 @@ if not api_key:
 
 # Initialize client
 client = anthropic.Anthropic(api_key=api_key)
+
+# Maximum number of images to retain in conversation history
+MAX_RETAINED_IMAGES = 4
 
 # System prompt provides context about the environment
 SYSTEM_PROMPT = """You are utilizing an Ubuntu virtual machine using debian:bookworm-slim.
@@ -48,6 +44,7 @@ def handle_response(response, messages, computer_tool):
             ]
 
             if result.base64_image:
+                # Add the new image
                 content.append(
                     {
                         "type": "image",
@@ -58,6 +55,17 @@ def handle_response(response, messages, computer_tool):
                         },
                     }
                 )
+
+                # Count and limit images in message history
+                image_count = 0
+                for msg in reversed(messages):
+                    if "content" in msg and isinstance(msg["content"], list):
+                        for block in reversed(msg["content"]):
+                            if isinstance(block, dict) and block.get("type") == "image":
+                                image_count += 1
+                                # If we exceed our limit, remove this image
+                                if image_count >= MAX_RETAINED_IMAGES:
+                                    msg["content"].remove(block)
 
             # Add tool result to messages
             messages.append({"role": "user", "content": content})
