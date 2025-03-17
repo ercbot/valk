@@ -1,3 +1,10 @@
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "anthropic",
+#     "valk",
+# ]
+# ///
 import os
 
 import anthropic
