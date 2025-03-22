@@ -17,7 +17,7 @@ mkdir -p /var/run/dbus
 dbus-daemon --system --fork
 log "D-Bus started"
 
-# Start IBus daemon
+# Start IBus daemon for unicode support
 log "Starting IBus daemon..."
 ibus-daemon -drx &
 IBUS_PID=$!
@@ -31,40 +31,47 @@ log "Xvfb started with PID: $XVFB_PID"
 
 # Wait for X server to start
 log "Waiting for X server to initialize..."
-sleep 5
+sleep 2
 log "X server wait complete"
 
-# Start chromium
-log "Starting Chromium..."
-chromium --no-sandbox \
-    --no-first-run \
-    --window-size=$DISPLAY_WIDTH,$DISPLAY_HEIGHT \
-    --window-position=0,0 \
-    --start-maximized \
-    --disable-gpu \
-    --disable-software-rasterizer \
-    --disable-dev-shm-usage \
-    --disable-features=VizDisplayCompositor \
-    --trace-warnings &
-CHROMIUM_PID=$!
-log "Chromium started with PID: $CHROMIUM_PID"
+# Start XFCE
+log "Starting XFCE desktop environment..."
+startxfce4 &
+XFCE_PID=$!
+log "XFCE started with PID: $XFCE_PID"
+
+# Wait for XFCE to initialize
+sleep 3
+
+# Start Firefox with uBlock Origin (already installed)
+log "Starting Firefox..."
+firefox-esr --new-window https://www.google.com &
+FIREFOX_PID=$!
+log "Firefox started with PID: $FIREFOX_PID"
+
+# Wait to ensure Firefox is properly started
+sleep 2
+
+# Start VS Code
+log "Starting VS Code..."
+code --no-sandbox &
+VSCODE_PID=$!
+log "VS Code started with PID: $VSCODE_PID"
 
 # Start VNC server
 log "Starting VNC server..."
 x11vnc -display $DISPLAY \
     -forever \
     -nopw \
-    -rfbport 5900 &     # Specify VNC port
+    -rfbport 5900 &
 VNC_PID=$!
 log "VNC server started with PID: $VNC_PID"
 
-# Start websockify to proxy WebSocket to VNC
-log "Starting websockify..."
-websockify -D 6080 localhost:5900 &
-WEBSOCKIFY_PID=$!
-log "Websockify started with PID: $WEBSOCKIFY_PID"
-
-# Run the application with backtrace enabled
+# Run the valk-server application with backtrace enabled
 log "Starting valk-server application..."
 RUST_BACKTRACE=1 /usr/local/bin/valk-server
 log "valk-server application exited"
+
+# If valk-server exits, keep container running
+log "valk-server exited, keeping container alive..."
+tail -f /dev/null
